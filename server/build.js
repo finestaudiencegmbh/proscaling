@@ -4,6 +4,16 @@ import { DEFAULTS } from './config.js';
 
 const collapse = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
+// Normalisierung wie in combine.js – damit Lead-UTMs und Meta-Entitätsnamen
+// identisch verglichen werden (Bindestriche vereinheitlicht, "Kopie"/"Copy" weg).
+const normKey = (s) =>
+  String(s ?? '')
+    .replace(/[‐-―−]/g, '-')
+    .replace(/[\s-]*\b(kopie|copy)\b\s*\d*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
 /** Rein numerischer Wert (z. B. Meta-IDs wie 52540202640549) -> nicht zuordenbar. */
 const isNumericId = (s) => /^\d{6,}$/.test(collapse(s));
 
@@ -79,7 +89,7 @@ function isPaid(utm, paidAdsets, patterns, paidPatterns = []) {
  * Führt Leads, VIP-Tickets und Adspend-Übersicht zu einem einheitlichen
  * Datensatz zusammen. Join über die E-Mail-Adresse.
  */
-export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg, project = DEFAULTS) {
+export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg, project = DEFAULTS, opts = {}) {
   const stageDefs = project.stages || [];
   const hasQuality = project.features?.hasQuality;
   const qualityStageKey = stageDefs.find((s) => s.quality)?.key || null;
@@ -92,10 +102,28 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
   const organicLabel = campCfg.organicLabel || '(organisch)';
   const unattribLabel = campCfg.unattributablePaidLabel || '(Paid · nicht zuordenbar)';
 
+  // Echte Meta-Namen (Kampagne/Anzeigengruppe/Creative) als zuverlässigstes
+  // Paid-Signal: stimmt eine Lead-UTM mit einer realen Meta-Entität überein, ist
+  // der Lead bezahlt – unabhängig vom Benennungsschema im Sheet.
+  const pn = opts.paidNames;
+  const metaNames = pn ? {
+    adsets: new Set((pn.adsets || []).map(normKey)),
+    campaigns: new Set((pn.campaigns || []).map(normKey)),
+    creatives: new Set((pn.creatives || []).map(normKey)),
+  } : null;
+  const matchesMeta = (utm) => !!metaNames && (
+    (collapse(utm.source) && metaNames.adsets.has(normKey(utm.source))) ||
+    (collapse(utm.campaign) && metaNames.campaigns.has(normKey(utm.campaign))) ||
+    (collapse(utm.medium) && metaNames.creatives.has(normKey(utm.medium)))
+  );
+
   // Leitet die Dimensions-Labels (Kampagne/Anzeigengruppe/Creative) aus einer
   // UTM-Kombination ab – einheitlich für Lead-UTM UND Stufen-UTM verwendbar.
   const dimsFor = (utm) => {
-    let paid = isPaid(utm, paidAdsets, organicPatterns, paidPatterns);
+    let paid;
+    if (isOrganicSource(utm, organicPatterns)) paid = false;        // harte Organisch-Regel zuerst
+    else if (matchesMeta(utm)) paid = true;                          // exakter Meta-Treffer
+    else paid = isPaid(utm, paidAdsets, organicPatterns, paidPatterns); // Heuristik-Fallback
     // Zusätzliches Paid-Signal: Creative steht in der Adspend-Übersicht (matches:creative)
     if (!paid && paidCreatives.size && paidCreatives.has(collapse(utm.medium).toLowerCase())) paid = true;
     const rawCampaign = collapse(utm.campaign);

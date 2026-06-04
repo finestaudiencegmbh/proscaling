@@ -66,18 +66,30 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
     parsed = getSampleParsed(project);
     source = 'demo';
   }
-  const dataset = buildDataset(parsed, cfg, project);
-
   // Facebook-Ads-Daten: bevorzugt direkt über die Meta Marketing API,
   // alternativ über Supermetrics. Fehler hier dürfen das Sheet-Dashboard
   // nicht blockieren. Der Zeitraum (from/to) wird an Meta durchgereicht.
   const range = from && to ? { since: from, until: to } : null;
   const metaOn = isMetaConfigured();
   const smOn = isSupermetricsConfigured();
+
+  // Meta ZUERST holen – liefert Spend UND die echten Kampagnen-/Anzeigengruppen-/
+  // Creative-Namen, an denen bezahlte Leads zuverlässig erkannt werden (statt
+  // anhand von Namensmustern zu raten).
+  let metaAll = null;
+  let metaErr = null;
+  if (metaOn) {
+    try { metaAll = await fetchMetaAll(range); }
+    catch (err) { console.error('Meta-Fehler:', err.message); metaErr = err.message; }
+  }
+  const paidNames = metaAll ? collectMetaNames(metaAll) : null;
+
+  const dataset = buildDataset(parsed, cfg, project, { paidNames });
+
   let fb = { configured: metaOn || smOn, provider: metaOn ? 'meta' : smOn ? 'supermetrics' : null, error: null, totals: null, byDim: null, rows: 0, hierarchy: null, daily: null };
   if (metaOn) {
-    try {
-      const all = await fetchMetaAll(range);
+    if (metaAll) {
+      const all = metaAll;
       const agg = aggregateFb(all.records);
       // Leads für denselben Zeitraum, damit FB-Hierarchie & Leads konsistent sind
       const leadsInRange = filterLeadsByRange(dataset.leads, from, to);
@@ -85,9 +97,8 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
       const hourlyDay = from && to && from === to ? from : null;
       const combined = combineMetaWithLeads(all, leadsInRange, { hourlyDay, stages: project.stages });
       fb = { configured: true, provider: 'meta', error: null, fetchedAt: new Date().toISOString(), ...agg, hierarchy: combined.hierarchy, daily: combined.daily, totals: combined.totals, nonLeadCampaigns: combined.nonLeadCampaigns, uocByDim: combined.uocByDim, dimMeta: combined.dimMeta, dailyByEntity: combined.dailyByEntity, intradayByEntity: combined.intradayByEntity, intradayDay: combined.intradayDay, accounts: all.accounts };
-    } catch (err) {
-      console.error('Meta-Fehler:', err.message);
-      fb.error = err.message;
+    } else {
+      fb.error = metaErr;
     }
   } else if (smOn) {
     try {
@@ -111,6 +122,18 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
   };
   cache.set(key, { at: Date.now(), payload });
   return payload;
+}
+
+/** Sammelt die realen Meta-Namen (Kampagne/Anzeigengruppe/Creative) für die
+ *  zuverlässige Paid-Erkennung in buildDataset. */
+function collectMetaNames(all) {
+  const adsets = new Set(), campaigns = new Set(), creatives = new Set();
+  for (const e of [...(all.entities || []), ...(all.records || [])]) {
+    if (e.adset) adsets.add(e.adset);
+    if (e.campaign) campaigns.add(e.campaign);
+    if (e.creative) creatives.add(e.creative);
+  }
+  return { adsets: [...adsets], campaigns: [...campaigns], creatives: [...creatives] };
 }
 
 /** Begrenzt Leads auf [from,to] (YYYY-MM-DD, inklusive). Tagesdatum = UTC,
