@@ -149,6 +149,34 @@ export function combineMetaWithLeads(meta, leads, opts = {}) {
     return { leads: L.leads, tickets: T.tickets, scoreSum: T.scoreSum, scored: T.scored, qualified: T.qualified };
   };
 
+  // Generische Funnel-Stufen (z. B. EG, ZG): je Stufe & Dimension zählen,
+  // attribuiert über die stufen-eigene Herkunft (l.stages[key]).
+  const stageDefs = opts.stages || [];
+  const stageBy = {};
+  for (const s of stageDefs) stageBy[s.key] = { campaign: new Map(), adset: new Map(), creative: new Map() };
+  for (const l of leads || []) {
+    for (const s of stageDefs) {
+      const hit = l.stages?.[s.key];
+      if (!hit) continue;
+      const parts = { campaign: hit.campaign, adset: hit.adset, creative: hit.creative };
+      for (const dim of ['campaign', 'adset', 'creative']) {
+        if (!normKey(leafName(dim, parts))) continue;
+        const k = pathKey(dim, parts);
+        stageBy[s.key][dim].set(k, (stageBy[s.key][dim].get(k) || 0) + 1);
+      }
+    }
+  }
+  const stageStatsFor = (dim, parts, leadsN, spend) => {
+    const out = {};
+    let prev = leadsN;
+    for (const s of stageDefs) {
+      const n = stageBy[s.key][dim].get(pathKey(dim, parts)) || 0;
+      out[s.key] = { count: n, cpa: spend != null && n ? round2(spend / n) : null, cvr: prev ? n / prev : null };
+      prev = n;
+    }
+    return out;
+  };
+
   // Hierarchie aufbauen: Kampagne -> Anzeigengruppe -> Ad
   const campaigns = new Map();
   for (const e of entities) {
@@ -198,7 +226,7 @@ export function combineMetaWithLeads(meta, leads, opts = {}) {
       qualified: adLeads.qualified,
     };
     const adActive = resolveActive(adStatus, haveAdStatus, e.creative);
-    a.ads.push({ id: e.adId, name: e.creative, level: 'ad', active: adActive, ...derive(adM) });
+    a.ads.push({ id: e.adId, name: e.creative, level: 'ad', active: adActive, ...derive(adM), stages: stageStatsFor('creative', { campaign: e.campaign, adset: e.adset, creative: e.creative }, adM.leads, adM.spend) });
 
     // FB-Summen nach oben aggregieren
     for (const node of [a._m, c._m]) {
@@ -228,6 +256,7 @@ export function combineMetaWithLeads(meta, leads, opts = {}) {
       adsets.push({
         id: a.id, name: a.name, level: 'adset', active: a.active, status: a.status,
         ...derive(a._m),
+        stages: stageStatsFor('adset', { campaign: c.name, adset: a.name }, a._m.leads, a._m.spend),
         ads: a.ads.sort((x, y) => y.spend - x.spend),
       });
     }
@@ -235,6 +264,7 @@ export function combineMetaWithLeads(meta, leads, opts = {}) {
       id: c.id, name: c.name, account: c.account, level: 'campaign', active: c.active, status: c.status,
       objective: c.objective, leadCampaign: c.leadCampaign,
       ...derive(c._m),
+      stages: stageStatsFor('campaign', { campaign: c.name }, c._m.leads, c._m.spend),
       adsets: adsets.sort((x, y) => y.spend - x.spend),
     });
   }

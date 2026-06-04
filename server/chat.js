@@ -16,8 +16,8 @@ const MODEL = 'claude-opus-4-8';
 
 /** Verdichtet das Dashboard-Payload zu einem kompakten, anonymen Kontext. */
 export function buildContext(payload, filtered, project = null) {
-  const features = project?.features || payload.project?.features || { hasTickets: true, hasQuality: true };
-  const hasTickets = features.hasTickets;
+  const features = project?.features || payload.project?.features || { hasQuality: true };
+  const stageDefs = project?.stages || payload.project?.stages || [];
   const hasQuality = features.hasQuality;
   const round = (n) => (n == null ? null : Math.round(n * 100) / 100);
   const leads = filtered || payload.leads || [];
@@ -34,20 +34,33 @@ export function buildContext(payload, filtered, project = null) {
 
   // Je Dimension verdichten (nur Kennzahlen, keine PII)
   const byDim = (key) => {
-    // Leads nach Lead-Dimension, Tickets/Qualität nach Ticket-eigener Herkunft
-    const TICKET_DIM = { campaign: 'ticketCampaign', adset: 'ticketAdset', creative: 'ticketCreative' };
-    const tKey = TICKET_DIM[key];
+    const STAGE_DIM = { campaign: 'campaign', adset: 'adset', creative: 'creative' }[key];
     const m = new Map();
-    const ensure = (k) => { if (!m.has(k)) m.set(k, { name: k, leads: 0, tickets: 0, qualified: 0 }); return m.get(k); };
+    const ensure = (k) => { if (!m.has(k)) m.set(k, { name: k, leads: 0, stufen: {} }); return m.get(k); };
     for (const l of leads) ensure(l[key] || '(unbekannt)').leads += 1;
-    for (const l of leads) {
-      if (!l.hasTicket) continue;
-      const e = ensure((tKey && l[tKey]) ? l[tKey] : (l[key] || '(unbekannt)'));
-      e.tickets += 1;
-      if (['A', 'B'].includes(l.quality?.tier)) e.qualified += 1;
+    for (const s of stageDefs) {
+      for (const l of leads) {
+        const hit = l.stages?.[s.key];
+        if (!hit) continue;
+        const e = ensure((STAGE_DIM ? hit[STAGE_DIM] : l[key]) || '(unbekannt)');
+        e.stufen[s.key] = (e.stufen[s.key] || 0) + 1;
+      }
     }
     return [...m.values()].sort((a, b) => b.leads - a.leads).slice(0, 25);
   };
+
+  // Funnel-Stufen-Summen
+  const stageSummary = {};
+  let prev = leads.length;
+  for (const s of stageDefs) {
+    const n = leads.filter((l) => l.stages?.[s.key]).length;
+    stageSummary[s.plural] = {
+      anzahl: n,
+      cvr_von_vorstufe: prev ? round(n / prev) : null,
+      kosten_pro_stufe: payload.fb?.totals?.leadSpend && n ? round(payload.fb.totals.leadSpend / n) : null,
+    };
+    prev = n;
+  }
 
   const fb = payload.fb || {};
   const ctx = {
@@ -58,10 +71,7 @@ export function buildContext(payload, filtered, project = null) {
       leads_gesamt: leads.length,
       leads_bezahlt: paid.length,
       leads_organisch: organic.length,
-      ...(hasTickets ? {
-        vip_tickets: tickets.length,
-        kosten_pro_ticket: fb.totals?.leadSpend && tickets.length ? round(fb.totals.leadSpend / tickets.length) : null,
-      } : {}),
+      ...(stageDefs.length ? { funnel_stufen: stageSummary } : {}),
       ...(hasQuality ? {
         qualifizierte_tickets: qualified.length,
         quali_rate: tickets.length ? round(qualified.length / tickets.length) : null,
@@ -91,7 +101,7 @@ export function buildContext(payload, filtered, project = null) {
     anzeigengruppe: l.adset,
     creative: l.creative,
     placement: l.placement,
-    ...(hasTickets ? { vip_ticket: l.hasTicket, vip_am: l.ticketAt } : {}),
+    ...(stageDefs.length ? { stufen: Object.fromEntries(stageDefs.filter((s) => l.stages?.[s.key]).map((s) => [s.key, l.stages[s.key].at || true])) } : {}),
     ...(hasQuality ? {
       quali_score: l.quality?.score ?? null,
       quali_tier: l.quality?.tier ?? null,
@@ -116,12 +126,14 @@ export function buildContext(payload, filtered, project = null) {
 
 function buildSystemPrompt(project) {
   const name = project?.name || 'das Projekt';
-  const f = project?.features || { hasTickets: true, hasQuality: true };
+  const f = project?.features || { hasQuality: true };
+  const stageDefs = project?.stages || [];
   const lines = [
     `Du bist der Analyse-Assistent im Lead-Dashboard für "${name}".`,
     `Du beantwortest Fragen zu Werbe-Performance${f.hasQuality ? ' und Lead-Qualität' : ''} auf Basis der dir gelieferten, bereits aggregierten Kennzahlen.`,
     '',
     'Regeln:',
+    ...(stageDefs.length ? [`- Der Funnel hat nach dem Lead diese Stufen: ${stageDefs.map((s) => s.plural).join(' -> ')}. 'funnel_stufen' enthält Anzahl, CVR von der Vorstufe und Kosten/Stufe.`] : []),
     '- Antworte kurz, präzise und auf Deutsch. Nutze konkrete Zahlen aus dem Kontext.',
     '- Rechne bei Bedarf abgeleitete Werte (z. B. Verhältnisse) sauber aus den vorhandenen Zahlen.',
     '- Beträge in Euro mit € und Tausenderpunkt; Raten in Prozent.',

@@ -115,16 +115,17 @@ function spendForAdsets(adsetNames, overviewByAdset) {
  * Anzeigengruppe aus der Sheet-Übersicht (nur Kampagne/Anzeigengruppe).
  */
 export function aggregate(leads, dimKey, overviewByAdset, fb, filters = {}, opts = {}) {
-  const { addFbRows = true } = opts; // FB-only-Zeilen (pausierte/leere Kampagnen) ergänzen?
+  const { addFbRows = true, stages = [] } = opts; // FB-only-Zeilen ergänzen? + Funnel-Stufen
   const fbDim = addFbRows ? (fb?.byDim?.[dimKey] || null) : null;
   // Tickets werden nach ihrer EIGENEN Herkunft (Ticket-UTM) gezählt, nicht nach
   // der Lead-Zeile – sonst landet ein Ticket in jeder Kampagne, in der die Person
   // Lead war. Für Placement gibt es keine eigene Ticket-Dimension -> Lead-Dim.
   const TICKET_DIM = { campaign: 'ticketCampaign', adset: 'ticketAdset', creative: 'ticketCreative' };
   const tDimKey = TICKET_DIM[dimKey];
+  const stageDim = { campaign: 'campaign', adset: 'adset', creative: 'creative' }[dimKey]; // Stufen-eigene Dimension
   const groups = new Map();
   const ensure = (k) => {
-    if (!groups.has(k)) groups.set(k, { key: k, leads: [], tickets: [], adsets: new Set() });
+    if (!groups.has(k)) groups.set(k, { key: k, leads: [], tickets: [], stageCounts: {}, adsets: new Set() });
     return groups.get(k);
   };
   for (const l of leads) {
@@ -136,6 +137,16 @@ export function aggregate(leads, dimKey, overviewByAdset, fb, filters = {}, opts
     if (!l.hasTicket) continue;
     const tk = (tDimKey && l[tDimKey]) ? l[tDimKey] : (l[dimKey] || '(unbekannt)');
     ensure(tk).tickets.push(l);
+  }
+  // Funnel-Stufen (z. B. EG, ZG): je Stufe nach stufen-eigener Herkunft zählen.
+  for (const s of stages) {
+    for (const l of leads) {
+      const hit = l.stages?.[s.key];
+      if (!hit) continue;
+      const gk = (stageDim ? hit[stageDim] : l[dimKey]) || '(unbekannt)';
+      const g = ensure(gk);
+      g.stageCounts[s.key] = (g.stageCounts[s.key] || 0) + 1;
+    }
   }
 
   const rows = [];
@@ -159,7 +170,7 @@ export function aggregate(leads, dimKey, overviewByAdset, fb, filters = {}, opts
     const clicks = (m ? m.clicks : null) ?? (dm ? dm.clicks : null);
     const uoc = addFbRows ? (fb?.uocByDim?.[dimKey]?.[normKey(g.key)] ?? (dm ? dm.uoc : null)) : null;
 
-    rows.push(makeRow({ key: g.key, total, tickets, avgQuality, qualified, spend, impressions, clicks, uoc, active: dm ? dm.active : null }));
+    rows.push(makeRow({ key: g.key, total, tickets, avgQuality, qualified, spend, impressions, clicks, uoc, active: dm ? dm.active : null, stageCounts: g.stageCounts, stages }));
   }
 
   // Pausierte/aktive FB-Einträge OHNE Leads im Zeitraum ergänzen, damit auch
@@ -174,14 +185,35 @@ export function aggregate(leads, dimKey, overviewByAdset, fb, filters = {}, opts
       if (filters.campaign && meta.parents?.campaign && normKey(meta.parents.campaign) !== normKey(filters.campaign)) continue;
       if (filters.adset && meta.parents?.adset && normKey(meta.parents.adset) !== normKey(filters.adset)) continue;
       const uoc = fb?.uocByDim?.[dimKey]?.[k] ?? meta.uoc ?? null;
-      rows.push(makeRow({ key: meta.name, total: 0, tickets: 0, avgQuality: null, qualified: 0, spend: meta.spend, impressions: meta.impressions, clicks: meta.clicks, uoc, active: meta.active }));
+      rows.push(makeRow({ key: meta.name, total: 0, tickets: 0, avgQuality: null, qualified: 0, spend: meta.spend, impressions: meta.impressions, clicks: meta.clicks, uoc, active: meta.active, stageCounts: {}, stages }));
     }
   }
   return rows;
 }
 
+/** Funnel-Stufen-Kennzahlen je Gruppe: Anzahl, Kosten/Stufe, CVR von der Vorstufe. */
+export function stageStats(stageCounts = {}, stageDefs = [], leadsN = 0, spend = null) {
+  const out = {};
+  let prev = leadsN;
+  for (const s of stageDefs) {
+    const n = stageCounts[s.key] || 0;
+    out[s.key] = { count: n, cpa: spend != null && n ? spend / n : null, cvr: prev ? n / prev : null };
+    prev = n;
+  }
+  return out;
+}
+
 /** Baut eine Ergebniszeile inkl. abgeleiteter Kennzahlen. */
-function makeRow({ key, total, tickets, avgQuality, qualified, spend, impressions, clicks, uoc, active }) {
+function makeRow({ key, total, tickets, avgQuality, qualified, spend, impressions, clicks, uoc, active, stageCounts = {}, stages = [] }) {
+  const stageObj = stageStats(stageCounts, stages, total, spend);
+  // Stufen-Werte zusätzlich flach in die Zeile legen (st_<key>_n/_cpa/_cvr),
+  // damit Sortierung/Formatierung der Tabelle ohne Sonderfälle funktionieren.
+  const flat = {};
+  for (const s of stages) {
+    flat[`st_${s.key}_n`] = stageObj[s.key].count;
+    flat[`st_${s.key}_cpa`] = stageObj[s.key].cpa;
+    flat[`st_${s.key}_cvr`] = stageObj[s.key].cvr;
+  }
   return {
     key,
     active,
@@ -191,6 +223,8 @@ function makeRow({ key, total, tickets, avgQuality, qualified, spend, impression
     avgQuality,
     qualified,
     qualifiedRate: tickets ? qualified / tickets : null,
+    stages: stageObj,
+    ...flat,
     spend,
     impressions,
     clicks,
@@ -204,7 +238,7 @@ function makeRow({ key, total, tickets, avgQuality, qualified, spend, impression
   };
 }
 
-export function computeKpis(leads, overviewByAdset, fb) {
+export function computeKpis(leads, overviewByAdset, fb, stageDefs = []) {
   const total = leads.length;
   const paid = leads.filter((l) => l.sourceType === 'paid');
   const organic = leads.filter((l) => l.sourceType !== 'paid');
@@ -230,8 +264,14 @@ export function computeKpis(leads, overviewByAdset, fb) {
   // dürfen organische Leads den CPL nicht verwässern.
   const leadSpend = fb?.totals?.leadSpend ?? spend;
   const nonLeadSpend = fb?.totals?.nonLeadSpend ?? 0;
+  // Funnel-Stufen (z. B. EG, ZG) gesamt: Anzahl, Kosten/Stufe (auf Lead-Spend),
+  // CVR von der Vorstufe (erste Stufe relativ zu den Leads gesamt).
+  const stageCounts = {};
+  for (const s of stageDefs) stageCounts[s.key] = leads.filter((l) => l.stages?.[s.key]).length;
+  const stages = stageStats(stageCounts, stageDefs, total, leadSpend);
   return {
     total,
+    stages,
     paid: paid.length,
     organic: organic.length,
     paidTickets: paidTickets.length,

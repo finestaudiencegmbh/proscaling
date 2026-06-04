@@ -4,13 +4,18 @@
  * Das Sheet besteht aus mehreren Tabs/Tabellen. Statt fixe Tab-Namen
  * vorauszusetzen, erkennt der Parser jede Tabelle an ihrer Kopfzeile.
  * Dadurch bleibt er stabil, auch wenn Tabs umbenannt oder verschoben werden.
+ *
+ * Generisches Funnel-Modell: Neben Leads und der Adspend-Übersicht kennt der
+ * Parser beliebig viele "Stufen" (project.stages) – jede Stufe ist ein eigener
+ * Tab (z. B. Ticket; oder Erstgespräch -> Zweitgespräch), erkannt an ihren
+ * eigenen Erkennungs-Spalten.
  */
 
 import { DEFAULTS } from './config.js';
 
 const norm = (s) =>
   String(s ?? '')
-    .replace(/ /g, ' ')
+    .replace(/ /g, ' ')
     .trim();
 
 const key = (s) =>
@@ -22,21 +27,23 @@ const key = (s) =>
 
 /**
  * Erkennt anhand einer Kopfzeile, um welchen Tabellentyp es sich handelt.
- * Die Erkennungs-Spalten kommen aus der Projekt-Config (questionnaire.classify).
- * Ticket-Tabellen werden nur erkannt, wenn das Projekt Tickets ODER Qualität
- * nutzt – sonst gibt es keinen Fragebogen.
+ * Reihenfolge: Übersicht -> Stufen (in Config-Reihenfolge) -> Leads. Die Stufen
+ * werden VOR den Leads geprüft, weil sich Stufen-Tabs (EG/ZG) oft nur durch
+ * eine Zusatzspalte (z. B. "Klient"/"Closer") von der Lead-Tabelle unterscheiden.
  */
-function classifyHeader(cells, q, features) {
+function classifyHeader(cells, project) {
   const set = new Set(cells.map(key));
-  const has = (keys) => keys.every((k) => set.has(k));
-  const some = (keys) => keys.some((k) => set.has(k));
-  const c = q.classify;
+  const has = (keys) => (keys || []).length > 0 && (keys || []).every((k) => set.has(k));
+  const some = (keys) => (keys || []).some((k) => set.has(k));
+  const ov = project.sheet.overview;
+  const ld = project.sheet.lead;
 
-  if (has(c.overviewHas)) return 'overview';
-  if ((features.hasTickets || features.hasQuality) && (some(c.ticketsSome) || has(c.ticketsHas))) {
-    return 'tickets';
+  if (has(ov.classifyHas)) return 'overview';
+  for (const stage of project.stages || []) {
+    const c = stage.sheet || {};
+    if (some(c.classifySome) || has(c.classifyHas)) return `stage:${stage.key}`;
   }
-  if (has(c.leadsHas) && some(c.leadsSome)) return 'leads';
+  if (has(ld.classifyHas) && (some(ld.classifySome) || (ld.classifySome || []).length === 0)) return 'leads';
   return null;
 }
 
@@ -45,7 +52,7 @@ function rowToObj(headerCells, row) {
   headerCells.forEach((h, i) => {
     const k = key(h);
     if (!k) return;
-    obj[k] = norm(row[i]);
+    if (obj[k] === undefined) obj[k] = norm(row[i]); // erste gleichnamige Spalte gewinnt
   });
   return obj;
 }
@@ -67,12 +74,25 @@ function parseDate(s) {
 
 const normEmail = (s) => norm(s).toLowerCase();
 
+/** Vor-/Nachname auflösen – entweder aus einem einzelnen Namensfeld oder zwei. */
+function resolveName(o, m) {
+  if (m.name) return { firstName: norm(o[m.name]), lastName: '' };
+  return { firstName: norm(o[m.firstName]), lastName: norm(o[m.lastName]) };
+}
+
+const resolveUtm = (o, m) => ({
+  source: norm(o[m.utmSource]),
+  medium: norm(o[m.utmMedium]),
+  campaign: norm(o[m.utmCampaign]),
+  term: norm(o[m.utmTerm]),
+});
+
 /**
  * Zerlegt ein Tab (2D-Array) in einzelne Tabellen. Ein Tab kann mehrere
- * untereinander gestapelte Tabellen enthalten (z. B. die Anzeigengruppen-
- * Übersicht mit mehreren Kampagnen).
+ * untereinander gestapelte Tabellen enthalten (z. B. die Übersicht mit
+ * mehreren Kampagnen).
  */
-function* iterateTables(rows, q, features) {
+function* iterateTables(rows, project) {
   let header = null;
   let type = null;
   let body = [];
@@ -81,7 +101,7 @@ function* iterateTables(rows, q, features) {
     return null;
   };
   for (const row of rows) {
-    const t = classifyHeader(row.map(norm).filter(Boolean).length >= 2 ? row : [], q, features);
+    const t = classifyHeader(row.map(norm).filter(Boolean).length >= 2 ? row : [], project);
     if (t) {
       const prev = flush();
       if (prev) yield prev;
@@ -114,106 +134,114 @@ const num = (s) => {
   return Number.isFinite(n) ? n : null;
 };
 
-function parseOverviewRow(o) {
-  const adset = norm(o['anzeigengruppe']);
-  if (!adset) return null;
+function parseOverviewRow(o, ov) {
+  // `adset` heißt das Feld aus historischen Gründen; es enthält den Wert der
+  // konfigurierten Dimensions-Spalte (ov.dimension), die je nach ov.matches als
+  // Anzeigengruppe ODER Creative interpretiert wird.
+  const dim = norm(o[ov.dimension]);
+  if (!dim) return null;
+  const clicksCols = Array.isArray(ov.clicks) ? ov.clicks : [ov.clicks];
   return {
-    status: norm(o['status']),
-    adset,
-    adspend: num(o['adspend']),
-    clicks: num(o['ausg klicks'] ?? o['klicks']),
-    cpc: num(o['cpc']),
-    cvrOptin: num(o['cvr optin']),
-    cvrTicket: num(o['cvr ticket']),
-    cpl: num(o['cpl']),
-    leads: num(o['leads']),
-    tickets: num(o['vip ticket']),
-    ticketsQualified: num(o['ticket qualifiziert']),
-    ticketsUnqualified: num(o['ticket nicht qualifiziert']),
+    status: norm(o[ov.status]),
+    adset: dim,
+    matches: ov.matches || 'adset',
+    adspend: num(o[ov.adspend]),
+    clicks: num(clicksCols.map((c) => o[c]).find((v) => v != null && v !== '')),
+    cpc: num(o[ov.cpc]),
+    leads: num(o[ov.leads]),
   };
 }
 
-function parseLeadRow(o, q) {
-  const L = q.lead;
+function parseLeadRow(o, project) {
+  const L = project.sheet.lead;
   const wonAt = parseDate(o[L.wonAt]);
   if (!wonAt) return null; // Zähl-/Summenzeilen ohne gültiges Datum überspringen
+  const { firstName, lastName } = resolveName(o, L);
+  // Stufen-Marker direkt aus der Lead-Zeile (z. B. "VIP-Ticket geholt am")
+  const markers = {};
+  for (const stage of project.stages || []) {
+    const col = stage.sheet?.leadMarker;
+    if (col) markers[stage.key] = parseDate(o[col]);
+  }
   return {
     wonAt,
-    firstName: norm(o[L.firstName]),
-    lastName: norm(o[L.lastName]),
+    firstName,
+    lastName,
     email: normEmail(o[L.email]),
-    utm: {
-      source: norm(o[L.utmSource]),
-      medium: norm(o[L.utmMedium]),
-      campaign: norm(o[L.utmCampaign]),
-      term: norm(o[L.utmTerm]),
-    },
-    ticketAt: parseDate(o[L.ticketDate]),
+    phone: L.phone ? norm(o[L.phone]) : '',
+    utm: resolveUtm(o, L),
+    markers,
   };
 }
 
-function parseTicketRow(o, q) {
-  const T = q.ticket;
-  const at = parseDate(o[T.date]);
-  const email = normEmail(T.emailColumns.map((c) => o[c]).find(Boolean));
+function parseStageRow(o, stage) {
+  const S = stage.sheet;
+  const at = parseDate(o[S.date]);
+  const emailCols = S.emailColumns || [S.email].filter(Boolean);
+  const email = normEmail(emailCols.map((c) => o[c]).find(Boolean));
   if (!at && !email) return null;
-  const answers = {};
-  for (const [field, col] of Object.entries(q.answers)) answers[field] = norm(o[col]);
-  return {
+  const { firstName, lastName } = resolveName(o, S);
+  const row = {
     at,
-    firstName: norm(o[T.firstName]),
-    lastName: norm(o[T.lastName]),
+    firstName,
+    lastName,
     email,
-    emailTypeform: normEmail(o[T.emailTypeform]),
-    phone: norm(o[T.phone]),
-    answers,
-    utm: {
-      source: norm(o[T.utmSource]),
-      medium: norm(o[T.utmMedium]),
-      campaign: norm(o[T.utmCampaign]),
-      term: norm(o[T.utmTerm]),
-    },
+    emailSecondary: S.emailSecondary ? normEmail(o[S.emailSecondary]) : '',
+    phone: S.phone ? norm(o[S.phone]) : '',
+    utm: resolveUtm(o, S),
   };
+  if (stage.answers) {
+    const answers = {};
+    for (const [field, col] of Object.entries(stage.answers)) answers[field] = norm(o[col]);
+    row.answers = answers;
+  }
+  return row;
 }
 
 /**
  * Hauptfunktion: bekommt die Tabs als [{title, values}] und liefert
- * { leads, tickets, overview, warnings }.
+ * { leads, stages: {key:[...]}, tickets, overview, warnings }.
+ * `tickets` ist ein Alias auf die Stufe mit key 'ticket' (Rückwärtskompatibilität).
  */
 export function parseSheets(sheets, project = DEFAULTS) {
-  const q = project.questionnaire;
-  const features = project.features;
   const leads = [];
-  const tickets = [];
   const overview = [];
   const warnings = [];
-  const seenTickets = new Set();
+  const stages = {};
+  const seen = {};
+  const stageByType = {};
+  for (const stage of project.stages || []) {
+    stages[stage.key] = [];
+    seen[stage.key] = new Set();
+    stageByType[`stage:${stage.key}`] = stage;
+  }
 
   for (const sheet of sheets) {
     const rows = sheet.values || [];
-    for (const table of iterateTables(rows, q, features)) {
+    for (const table of iterateTables(rows, project)) {
       for (const row of table.body) {
         const o = rowToObj(table.header, row);
         if (table.type === 'overview') {
-          const r = parseOverviewRow(o);
+          const r = parseOverviewRow(o, project.sheet.overview);
           if (r) overview.push(r);
         } else if (table.type === 'leads') {
-          const r = parseLeadRow(o, q);
+          const r = parseLeadRow(o, project);
           if (r) leads.push(r);
-        } else if (table.type === 'tickets') {
-          const r = parseTicketRow(o, q);
+        } else if (stageByType[table.type]) {
+          const stage = stageByType[table.type];
+          const r = parseStageRow(o, stage);
           if (!r) continue;
-          // Dedupe (das Sheet enthält teils zwei Ticket-Tabs)
+          // Dedupe (manche Sheets enthalten denselben Stufen-Tab doppelt/roh)
           const dk = `${r.email}|${r.at || ''}`;
-          if (seenTickets.has(dk)) continue;
-          seenTickets.add(dk);
-          tickets.push(r);
+          if (seen[stage.key].has(dk)) continue;
+          seen[stage.key].add(dk);
+          stages[stage.key].push(r);
         }
       }
     }
   }
 
-  return { leads, tickets, overview, warnings };
+  return { leads, stages, tickets: stages.ticket || [], overview, warnings };
 }
 
 export const _internal = { classifyHeader, key, num, parseDate, iterateTables };

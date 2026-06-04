@@ -63,7 +63,7 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
     parsed = parseSheets(sheets, project);
     source = 'google';
   } else {
-    parsed = getSampleParsed();
+    parsed = getSampleParsed(project);
     source = 'demo';
   }
   const dataset = buildDataset(parsed, cfg, project);
@@ -83,7 +83,7 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
       const leadsInRange = filterLeadsByRange(dataset.leads, from, to);
       // Stunden-Raster, wenn genau ein Tag gewählt ist
       const hourlyDay = from && to && from === to ? from : null;
-      const combined = combineMetaWithLeads(all, leadsInRange, { hourlyDay });
+      const combined = combineMetaWithLeads(all, leadsInRange, { hourlyDay, stages: project.stages });
       fb = { configured: true, provider: 'meta', error: null, fetchedAt: new Date().toISOString(), ...agg, hierarchy: combined.hierarchy, daily: combined.daily, totals: combined.totals, nonLeadCampaigns: combined.nonLeadCampaigns, uocByDim: combined.uocByDim, dimMeta: combined.dimMeta, dailyByEntity: combined.dailyByEntity, intradayByEntity: combined.intradayByEntity, intradayDay: combined.intradayDay, accounts: all.accounts };
     } catch (err) {
       console.error('Meta-Fehler:', err.message);

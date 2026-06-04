@@ -16,10 +16,9 @@ function Card({ label, value, sub, accent }) {
 const CYAN = '#5ec8d8';
 const GREEN = '#6fcf97';
 
-export default function Kpis({ kpis, dist, tiers, qualityDaily = [], features = { hasTickets: true, hasQuality: true }, accent = '#d0bb5a', labels = {} }) {
+export default function Kpis({ kpis, dist, tiers, qualityDaily = [], features = { hasQuality: true }, stages = [], accent = '#d0bb5a' }) {
   const GOLD = accent;
-  const ticketSg = labels.ticketSingular || 'Ticket';
-  const ticketPl = labels.ticketPlural || 'Tickets';
+  const prevLabel = (i) => (i === 0 ? 'Leads' : stages[i - 1].plural);
   return (
     <div className="kpi-sections">
       {/* Bezahlt (Facebook Ads) */}
@@ -29,8 +28,6 @@ export default function Kpis({ kpis, dist, tiers, qualityDaily = [], features = 
           <Card label="Adspend" value={fmtEur(kpis.spend)} sub={kpis.nonLeadSpend > 0 ? `davon ${fmtEur(kpis.nonLeadSpend)} Traffic` : 'gesamt'} accent={GOLD} />
           <Card label="Bezahlte Leads" value={fmtInt(kpis.paid)} sub="über Ads" accent={GOLD} />
           <Card label="CPL" value={fmtEur(kpis.cpl)} sub={kpis.nonLeadSpend > 0 ? 'nur Lead-Kampagnen' : 'pro bezahltem Lead'} accent={GOLD} />
-          {features.hasTickets && <Card label={`${ticketPl} (Paid)`} value={fmtInt(kpis.paidTickets)} sub={`Rate ${fmtPct(kpis.paidTicketRate)}`} accent={GOLD} />}
-          {features.hasTickets && <Card label={`Kosten / ${ticketSg}`} value={fmtEur(kpis.cpt)} sub={`pro bezahltem ${ticketSg}`} accent={GOLD} />}
         </div>
       </section>
 
@@ -39,10 +36,27 @@ export default function Kpis({ kpis, dist, tiers, qualityDaily = [], features = 
         <div className="kpi-section-head"><span className="kpi-dot" style={{ background: CYAN }} />Organisch</div>
         <div className="kpi-grid">
           <Card label="Organische Leads" value={fmtInt(kpis.organic)} sub="ohne Ad-Kosten" accent={CYAN} />
-          {features.hasTickets && <Card label={`${ticketPl} (Organisch)`} value={fmtInt(kpis.organicTickets)} sub={`Rate ${fmtPct(kpis.organicTicketRate)}`} accent={CYAN} />}
           <Card label="Leads gesamt" value={fmtInt(kpis.total)} sub={`${fmtInt(kpis.paid)} bezahlt · ${fmtInt(kpis.organic)} organisch`} accent={CYAN} />
         </div>
       </section>
+
+      {/* Funnel-Stufen (z. B. Erstgespräche -> Zweitgespräche) */}
+      {stages.length > 0 && (
+        <section className="kpi-section">
+          <div className="kpi-section-head"><span className="kpi-dot" style={{ background: stages[0].color || GREEN }} />Funnel</div>
+          <div className="kpi-grid">
+            {stages.map((s, i) => {
+              const st = kpis.stages?.[s.key] || { count: 0, cpa: null, cvr: null };
+              return (
+                <React.Fragment key={s.key}>
+                  <Card label={s.plural} value={fmtInt(st.count)} sub={`CVR ${prevLabel(i)}→${s.short || s.singular} ${fmtPct(st.cvr)}`} accent={s.color || GREEN} />
+                  <Card label={`Kosten / ${s.singular}`} value={fmtEur(st.cpa)} sub="auf Lead-Spend" accent={s.color || GREEN} />
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Lead-Qualität (quellenübergreifend) */}
       {features.hasQuality && (

@@ -14,10 +14,10 @@ const KPIS = [
   { key: 'leads', label: 'Leads', color: '#d0bb5a', fmt: fmtInt, sheet: true,
     value: (p) => p.leads,
     total: (t) => t.leads },
-  { key: 'tickets', label: 'Tickets', color: '#6fcf97', fmt: fmtInt, sheet: true, feature: 'hasTickets',
+  { key: 'tickets', label: 'Tickets', color: '#6fcf97', fmt: fmtInt, sheet: true, feature: 'tickets',
     value: (p) => p.tickets,
     total: (t) => t.tickets },
-  { key: 'quality', label: 'Lead-Qualität', color: '#6dd47e', fmt: fmtScore, sheet: true, feature: 'hasQuality',
+  { key: 'quality', label: 'Lead-Qualität', color: '#6dd47e', fmt: fmtScore, sheet: true, feature: 'quality',
     value: (p) => p.quality,
     total: (t) => (t.qLeads ? Math.round(t.qSum / t.qLeads) : null) },
   { key: 'spend', label: 'Adspend', color: '#9db4e8', fmt: fmtEur,
@@ -43,15 +43,17 @@ const KPIS = [
 const PLATFORM_COLORS = ['#4267B2', '#E1306C', '#0a84ff', '#25D366', '#ff7849', '#9b59b6'];
 const platformLabel = (p) => ({ facebook: 'Facebook', instagram: 'Instagram', audience_network: 'Audience Network', messenger: 'Messenger', whatsapp: 'WhatsApp', unknown: 'Unbekannt' }[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Unbekannt'));
 
-export default function GraphPanel({ title, levelLabel, series, hourly = false, features = { hasTickets: true, hasQuality: true }, accent = '#d0bb5a', labels = {}, onClose }) {
+export default function GraphPanel({ title, levelLabel, series, hourly = false, features = { hasQuality: true }, stages = [], accent = '#d0bb5a', onClose }) {
   // Im Stunden-Modus (1 Tag) nur Sheet-KPIs – Meta-Spend ist noch nicht stündlich.
-  // Zusätzlich: Ticket-/Qualitäts-KPIs nur, wenn das Projekt sie nutzt; und das
-  // Leads-KPI in der Akzentfarbe (Branding) sowie ggf. das Ticket-Label.
+  // Die Ticket-Zeitreihe basiert auf der Legacy-Stufe 'ticket'; Qualität auf
+  // hasQuality. Das Leads-KPI nutzt die Akzentfarbe (Branding).
+  const ticketStage = stages.find((s) => s.key === 'ticket') || null;
+  const present = { tickets: Boolean(ticketStage), quality: Boolean(features.hasQuality) };
   const kpiList = (hourly ? KPIS.filter((k) => k.sheet) : KPIS)
-    .filter((k) => !k.feature || features[k.feature])
+    .filter((k) => !k.feature || present[k.feature])
     .map((k) => {
       if (k.key === 'leads') return { ...k, color: accent };
-      if (k.key === 'tickets') return { ...k, label: labels.ticketPlural || 'Tickets' };
+      if (k.key === 'tickets' && ticketStage) return { ...k, label: ticketStage.plural, color: ticketStage.color || k.color };
       return k;
     });
   // Standard: Leads + CPL (Tag) bzw. Leads (Stunde)

@@ -12,21 +12,21 @@ const BASE_COLS = [
   { key: 'placement', label: 'Placement', sort: (l) => l.placement },
 ];
 
-function buildCols(features, ticketSg) {
+function buildCols(features, stages) {
   const cols = [...BASE_COLS];
-  if (features.hasTickets) cols.push({ key: 'ticket', label: ticketSg, sort: (l) => (l.hasTicket ? 1 : 0) });
+  for (const s of stages) cols.push({ key: `stage_${s.key}`, label: s.short || s.singular, sort: (l) => (l.stages?.[s.key] ? 1 : 0), stage: s });
   if (features.hasQuality) cols.push({ key: 'quality', label: 'Qualität', sort: (l) => l.quality?.score ?? -1 });
   return cols;
 }
 
-function exportCsv(leads, features, ticketSg) {
+function exportCsv(leads, features, stages) {
   const head = ['Name', 'E-Mail', 'Telefon', 'Lead am', 'Quelle', 'Kampagne', 'Anzeigengruppe', 'Creative', 'Placement'];
-  if (features.hasTickets) head.push(`${ticketSg} am`);
+  for (const s of stages) head.push(`${s.singular} am`);
   if (features.hasQuality) head.push('Quality-Score', 'Tier', 'Einkommen', 'Beschäftigung', 'Immobilien', 'Investiert', 'Beziehungsstand');
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = leads.map((l) => {
     const row = [l.name, l.email, l.phone, l.wonAt, l.sourceType, l.campaign, l.adset, l.creative, l.placement];
-    if (features.hasTickets) row.push(l.ticketAt);
+    for (const s of stages) row.push(l.stages?.[s.key]?.at || '');
     if (features.hasQuality) row.push(l.quality?.score ?? '', l.quality?.tier ?? '', l.answers?.income, l.answers?.employment, l.answers?.realEstate, l.answers?.invested, l.answers?.relationship);
     return row.map(esc).join(';');
   });
@@ -40,9 +40,8 @@ function exportCsv(leads, features, ticketSg) {
   URL.revokeObjectURL(url);
 }
 
-export default function LeadsTable({ leads, tiers, features = { hasTickets: true, hasQuality: true }, labels = {} }) {
-  const ticketSg = labels.ticketSingular || 'VIP';
-  const COLS = useMemo(() => buildCols(features, ticketSg), [features.hasTickets, features.hasQuality, ticketSg]);
+export default function LeadsTable({ leads, tiers, features = { hasQuality: true }, stages = [] }) {
+  const COLS = useMemo(() => buildCols(features, stages), [features.hasQuality, stages]);
   const [sort, setSort] = useState({ col: 'wonAt', dir: 'desc' });
   const [open, setOpen] = useState(null);
 
@@ -63,7 +62,7 @@ export default function LeadsTable({ leads, tiers, features = { hasTickets: true
     <div>
       <div className="table-toolbar">
         <span>{leads.length} Leads</span>
-        <button className="ghost-btn" onClick={() => exportCsv(sorted, features, ticketSg)}>
+        <button className="ghost-btn" onClick={() => exportCsv(sorted, features, stages)}>
           <svg className="btn-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <path d="M7 10l5 5 5-5" />
@@ -99,7 +98,9 @@ export default function LeadsTable({ leads, tiers, features = { hasTickets: true
                   <td className="trunc sec" data-label="Anzeigengruppe" title={l.adset}>{l.adset}</td>
                   <td className="trunc sec" data-label="Creative" title={l.creative}>{l.creative}</td>
                   <td className="trunc sec" data-label="Placement" title={l.placement}>{l.placement}</td>
-                  {features.hasTickets && <td className="sec" data-label={ticketSg}>{l.hasTicket ? <span className="pill vip">{ticketSg}</span> : <span className="muted">–</span>}</td>}
+                  {stages.map((s) => (
+                    <td key={s.key} className="sec" data-label={s.short || s.singular}>{l.stages?.[s.key] ? <span className="pill vip" style={{ color: s.color, borderColor: s.color }}>{s.short || s.singular}</span> : <span className="muted">–</span>}</td>
+                  ))}
                   {features.hasQuality && <td data-label="Qualität"><QualityBadge quality={l.quality} tiers={tiers} /></td>}
                 </tr>
                 {open === l.email + i && features.hasQuality && l.answers && (

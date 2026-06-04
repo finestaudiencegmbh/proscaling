@@ -4,7 +4,7 @@
   "name": "ProScaling GmbH",
   "subtitle": "Lead- & Kampagnen-Dashboard",
 
-  "_comment_branding": "primary = Markenfarbe (dunkler Hintergrund), accent = Akzent-/Highlight-Farbe (Buttons, KPI-Akzente, Graphen). logo = Pfad zu einem Logo in web/public (z. B. /logo.svg) ODER null, dann wird das Kürzel angezeigt. initials = Kürzel, das ohne Logo als Markenzeichen erscheint.",
+  "_comment_branding": "primary = Markenfarbe (dunkler Hintergrund), accent = Akzent-/Highlight-Farbe. logo = Pfad zu einem Logo in web/public ODER null (dann Kürzel). initials = Kürzel als Markenzeichen.",
   "branding": {
     "primary": "#000000",
     "accent": "#cba851",
@@ -12,17 +12,64 @@
     "initials": "PS"
   },
 
-  "_comment_features": "hasTickets = Ticket-/zweite-Stufe-System (VIP o. ä.). hasQuality = Fragebogen-basiertes Lead-Qualitäts-Scoring. Bei false verschwinden alle zugehörigen KPIs, Spalten und Filter sauber aus dem Dashboard.",
+  "_comment_features": "hasQuality = Fragebogen-basiertes Lead-Qualitäts-Scoring (aus). Funnel-Stufen werden über 'stages' definiert.",
   "features": {
-    "hasTickets": false,
     "hasQuality": false
   },
 
-  "_comment_labels": "Beschriftung der Ticket-Stufe (nur relevant, wenn hasTickets = true).",
-  "labels": {
-    "ticketSingular": "Ticket",
-    "ticketPlural": "Tickets"
-  }
+  "_comment_stages": "Funnel-Stufen NACH dem Lead. Jede Stufe ist ein eigener Sheet-Tab, per E-Mail an den Lead gejoint, mit eigener UTM-Attribution. classifyHas erkennt den Tab an einer eindeutigen Spalte (EG: 'klient', ZG: 'closer'). UTM-Spalten der ZG heißen im Sheet 'UTM Source 1' usw.",
+  "stages": [
+    {
+      "key": "eg",
+      "singular": "Erstgespräch",
+      "plural": "Erstgespräche",
+      "short": "EG",
+      "color": "#6fcf97",
+      "sheet": {
+        "classifyHas": ["e-mail", "klient"],
+        "date": "datum",
+        "name": "name",
+        "emailColumns": ["e-mail"],
+        "phone": "telefon",
+        "utmSource": "utm source",
+        "utmMedium": "utm medium",
+        "utmCampaign": "utm campaign",
+        "utmTerm": "utm term"
+      }
+    },
+    {
+      "key": "zg",
+      "singular": "Zweitgespräch",
+      "plural": "Zweitgespräche",
+      "short": "ZG",
+      "color": "#5ad0c0",
+      "sheet": {
+        "classifyHas": ["e-mail", "closer"],
+        "date": "datum",
+        "name": "name",
+        "emailColumns": ["e-mail"],
+        "phone": "telefon",
+        "utmSource": "utm source 1",
+        "utmMedium": "utm medium 1",
+        "utmCampaign": "utm campaign 1",
+        "utmTerm": "utm term 1"
+      }
+    }
+  ],
 
-  ,"_comment_questionnaire": "Spalten-Mapping des Sheets (nur nötig, wenn hasTickets/hasQuality = true). Die Defaults in server/config.js passen zum MoneyMaker-Sheet (deutsche Fragebogen-Spalten). Für ein Projekt mit eigenem Fragebogen hier ein 'questionnaire'-Objekt ergänzen (siehe TEMPLATE.md)."
+  "_comment_sheet": "Spalten-Mapping. Die ProScaling-Leadliste hat ein einzelnes 'Name'-Feld, Datum heißt 'Datum', UTMs mit Leerzeichen ('UTM Source'). Die Adspend-Übersicht (nach Creative) wird NICHT aus dem Sheet gelesen – der Ad-Spend kommt live aus der Meta-API.",
+  "sheet": {
+    "lead": {
+      "classifyHas": ["datum"],
+      "classifySome": ["e-mail", "utm source"],
+      "wonAt": "datum",
+      "name": "name",
+      "email": "e-mail",
+      "phone": "telefon",
+      "utmSource": "utm source",
+      "utmMedium": "utm medium",
+      "utmCampaign": "utm campaign",
+      "utmTerm": "utm term"
+    }
+  }
 }

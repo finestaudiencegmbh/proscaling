@@ -19,27 +19,32 @@ const fmtEur2 = (n) => (n == null ? '–' : new Intl.NumberFormat('de-DE', { sty
 const fmtScore = (n) => (n == null ? '–' : String(Math.round(n)));
 
 /** Kennzahlen in drei Sektionen – ohne horizontales Scrollen, alles umbruchfähig. */
-function Metrics({ n, leadHidden, features, labels = {} }) {
-  const ticketSg = labels.ticketSingular || 'Ticket';
-  const ticketPl = labels.ticketPlural || 'Tickets';
+function Metrics({ n, leadHidden, features, stages = [] }) {
   const lead = (v) => (leadHidden ? '–' : v);
+  // Pro Funnel-Stufe: Anzahl, Kosten/Stufe und CVR von der Vorstufe.
+  const stageItems = [];
+  stages.forEach((s, i) => {
+    const st = n.stages?.[s.key] || {};
+    const prev = i === 0 ? 'Lead' : (stages[i - 1].short || stages[i - 1].singular);
+    stageItems.push([s.plural, lead(fmtInt(st.count))]);
+    stageItems.push([`€/${s.short || s.singular}`, lead(fmtEur(st.cpa))]);
+    stageItems.push([`CVR ${prev}→${s.short || s.singular}`, lead(fmtPct(st.cvr))]);
+  });
   const groups = [
     {
       title: 'Ergebnis', cls: 'g-result',
       items: [
         ['Adspend', fmtEur(n.spend)],
         ['Leads', lead(fmtInt(n.leads))],
-        ...(features.hasTickets ? [[ticketPl, lead(fmtInt(n.tickets))]] : []),
         ['€/Lead', lead(fmtEur(n.cpl))],
-        ...(features.hasTickets ? [[`€/${ticketSg}`, lead(fmtEur(n.cpt))]] : []),
       ],
     },
     {
-      title: 'Qualität & Funnel', cls: 'g-quality',
+      title: 'Funnel', cls: 'g-quality',
       items: [
+        ...stageItems,
         ...(features.hasQuality ? [['Quali-Rate', lead(fmtPct(n.qualifiedRate))], ['Ø Quali', lead(fmtScore(n.avgQuality))]] : []),
         ['CVR Start', lead(fmtPct(n.cvrStart))],
-        ...(features.hasTickets ? [[`CVR ${ticketSg}`, lead(fmtPct(n.cvrTicket))]] : []),
       ],
     },
     {
@@ -78,8 +83,7 @@ function StatusDot({ active }) {
 
 const LEVEL_LABEL = { campaign: 'Kampagne', adset: 'Anzeigengruppe', creative: 'Creative' };
 
-export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEntity, intradayDay, accounts, features = { hasTickets: true, hasQuality: true }, accent = '#d0bb5a', labels = {} }) {
-  const ticketSg = labels.ticketSingular || 'Ticket';
+export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEntity, intradayDay, accounts, features = { hasQuality: true }, stages = [], accent = '#d0bb5a' }) {
   const [open, setOpen] = useState(() => new Set());
   const [onlyActive, setOnlyActive] = useState(true);
   const [graph, setGraph] = useState(null);
@@ -122,7 +126,7 @@ export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEnti
                 <span className="cc-head-spend">{fmtEur(c.spend)}</span>
                 {hasGraph('campaign', { campaign: c.name }) && <GraphBtn onClick={() => openGraph('campaign', { campaign: c.name }, c.name)} />}
               </div>
-              <Metrics n={c} leadHidden={leadHidden} features={features} labels={labels} />
+              <Metrics n={c} leadHidden={leadHidden} features={features} stages={stages} />
 
               {cOpen && (
                 <div className="cc-children">
@@ -146,21 +150,24 @@ export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEnti
                         </div>
                         {aOpen && (
                           <div className="cc-sub-body">
-                            <Metrics n={a} leadHidden={leadHidden} features={features} labels={labels} />
-                            {ads.length > 0 && (
+                            <Metrics n={a} leadHidden={leadHidden} features={features} stages={stages} />
+                            {ads.length > 0 && (() => {
+                              const dataCols = 3 + stages.length + (features.hasQuality ? 1 : 0) + 2;
+                              const gridStyle = { gridTemplateColumns: `minmax(180px, 2.4fr) repeat(${dataCols}, minmax(64px, 1fr))` };
+                              return (
                               <div className="cc-ads">
-                                <div className="cc-ad cc-ad-headrow">
+                                <div className="cc-ad cc-ad-headrow" style={gridStyle}>
                                   <span className="cc-ad-name">Werbeanzeige</span>
                                   <span>Adspend</span>
                                   <span>Leads</span>
                                   <span>CPL</span>
-                                  {features.hasTickets && <span>{labels.ticketPlural || 'Tickets'}</span>}
+                                  {stages.map((s) => <span key={s.key}>{s.short || s.singular}</span>)}
                                   {features.hasQuality && <span>Quali-Rate</span>}
                                   <span>CVR Start</span>
                                   <span>CTR ausg.</span>
                                 </div>
                                 {ads.map((ad) => (
-                                  <div key={ad.id} className={`cc-ad ${ad.active === false ? 'is-paused' : ''}`}>
+                                  <div key={ad.id} className={`cc-ad ${ad.active === false ? 'is-paused' : ''}`} style={gridStyle}>
                                     <span className="cc-ad-name" title={ad.name}>
                                       {ad.active != null && <span className={`status-dot ${ad.active ? 'on' : 'off'}`} />}
                                       <span className="cc-ad-label">{ad.name}</span>
@@ -170,14 +177,15 @@ export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEnti
                                     <span>{fmtEur(ad.spend)}</span>
                                     <span>{leadHidden ? '–' : fmtInt(ad.leads)}</span>
                                     <span>{leadHidden ? '–' : fmtEur(ad.cpl)}</span>
-                                    {features.hasTickets && <span>{leadHidden ? '–' : fmtInt(ad.tickets)}</span>}
+                                    {stages.map((s) => <span key={s.key}>{leadHidden ? '–' : fmtInt(ad.stages?.[s.key]?.count ?? 0)}</span>)}
                                     {features.hasQuality && <span>{leadHidden ? '–' : fmtPct(ad.qualifiedRate)}</span>}
                                     <span>{leadHidden ? '–' : fmtPct(ad.cvrStart)}</span>
                                     <span>{fmtPct(ad.outboundCtr)}</span>
                                   </div>
                                 ))}
                               </div>
-                            )}
+                              );
+                            })()}
                             {ads.length === 0 && <div className="muted" style={{ padding: '8px 2px' }}>keine Werbeanzeigen</div>}
                           </div>
                         )}
@@ -228,7 +236,7 @@ export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEnti
       {campaigns.length === 0 && <div className="empty">Keine {onlyActive ? 'aktiven ' : ''}Kampagnen gefunden.</div>}
 
       {graph && (
-        <GraphPanel title={graph.title} levelLabel={graph.levelLabel} series={graph.series} hourly={intraday} features={features} accent={accent} labels={labels} onClose={() => setGraph(null)} />
+        <GraphPanel title={graph.title} levelLabel={graph.levelLabel} series={graph.series} hourly={intraday} features={features} stages={stages} accent={accent} onClose={() => setGraph(null)} />
       )}
     </div>
   );

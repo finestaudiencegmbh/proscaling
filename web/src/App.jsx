@@ -83,10 +83,13 @@ export default function App() {
   const hasFb = Boolean(fb?.byDim);
   const project = data?.project || null;
   const features = project?.features || DEFAULT_FEATURES;
+  const stages = project?.stages || [];
   const accent = project?.branding?.accent || '#d0bb5a';
-  const ticketLabel = features.hasTickets ? (project?.labels?.ticketPlural || 'Tickets') : null;
+  // Legacy-Ticket-Stufe (für den Tages-Verlauf, der auf hasTicket basiert).
+  const ticketStage = stages.find((s) => s.key === 'ticket') || null;
+  const verlaufLabel = ticketStage ? ticketStage.plural : null;
   const filtered = useMemo(() => (data ? applyFilters(data.leads, filters) : []), [data, filters]);
-  const kpis = useMemo(() => (data ? computeKpis(filtered, data.overviewByAdset, fb) : null), [data, filtered, fb]);
+  const kpis = useMemo(() => (data ? computeKpis(filtered, data.overviewByAdset, fb, stages) : null), [data, filtered, fb, stages]);
   const dist = useMemo(() => (data ? tierDistribution(filtered, tiers) : {}), [data, filtered, tiers]);
   // Stunden-Raster, wenn der gewählte Zeitraum genau EIN Tag ist (0–24 Uhr).
   const hourlyDay = (range.from && range.to && range.from === range.to) ? range.from : null;
@@ -94,12 +97,13 @@ export default function App() {
   const cplDaily = useMemo(() => ((hasFb && fb.daily) ? cplByDay(fb.daily.spend, filtered) : []), [hasFb, fb, filtered]);
   const qualityDaily = useMemo(() => (data ? qualityByDay(filtered) : []), [data, filtered]);
 
-  // Verlaufs-Serien: Leads immer, Ticket-Stufe nur wenn aktiviert.
+  // Verlaufs-Serien: Leads immer, plus die Ticket-Stufe (sofern vorhanden) –
+  // der Tages-Verlauf basiert auf hasTicket (Legacy-Stufe 'ticket').
   const verlaufSeries = useMemo(() => {
     const s = [{ key: 'leads', label: 'Leads', color: '#5ec8d8', data: leadDaily.map((d) => ({ date: d.date, value: d.leads })) }];
-    if (features.hasTickets) s.push({ key: 'tickets', label: ticketLabel, color: '#6fcf97', data: leadDaily.map((d) => ({ date: d.date, value: d.tickets })) });
+    if (ticketStage) s.push({ key: 'tickets', label: ticketStage.plural, color: ticketStage.color || '#6fcf97', data: leadDaily.map((d) => ({ date: d.date, value: d.tickets })) });
     return s;
-  }, [leadDaily, features.hasTickets, ticketLabel]);
+  }, [leadDaily, ticketStage]);
 
   // Drill-Pfad NUR für "Performance nach Ebene" – getrennt von den globalen
   // Filtern. Klick = reinzoomen, ohne dauerhaften globalen Filter zu setzen.
@@ -125,8 +129,8 @@ export default function App() {
   const paidRows = useMemo(() => {
     if (!data) return [];
     const leads = drillLeads.filter((l) => l.sourceType === 'paid' && l.campaign !== UNATTRIB);
-    return aggregate(leads, tab, data.overviewByAdset, fb, drill);
-  }, [data, drillLeads, tab, fb, drill]);
+    return aggregate(leads, tab, data.overviewByAdset, fb, drill, { stages });
+  }, [data, drillLeads, tab, fb, drill, stages]);
 
   const organicRows = useMemo(() => {
     if (!data) return [];
@@ -139,10 +143,10 @@ export default function App() {
     const dim = orgDrill ? 'organicAdset' : 'organicCampaign';
     const rows = aggregate(
       leads.map((l) => ({ ...l, organicCampaign: l.organicCampaign || '(direkt)', organicAdset: l.organicAdset || '(direkt)' })),
-      dim, data.overviewByAdset, fb, {}, { addFbRows: false }
+      dim, data.overviewByAdset, fb, {}, { addFbRows: false, stages }
     );
     return rows;
-  }, [data, filtered, fb, orgDrill]);
+  }, [data, filtered, fb, orgDrill, stages]);
 
   // Drill-Down: Klick auf eine Zeile zoomt eine Ebene tiefer (lokaler Pfad).
   const DRILL_ORDER = ['campaign', 'adset', 'creative', 'placement'];
@@ -225,17 +229,17 @@ export default function App() {
               <>
                 {/* Graphen oben: Leads & Tickets breit, darunter Spend + CPL nebeneinander */}
                 <section className="panel">
-                  <div className="panel-head"><div><h2>Verlauf</h2><span className="panel-sub">{hourlyDay ? `${ticketLabel ? `Leads/${ticketLabel}` : 'Leads'} im Tagesverlauf (0–24 Uhr, minutengenau) · Maus zum Anzeigen` : `${ticketLabel ? `Leads/${ticketLabel}` : 'Leads'} (Sheet) & Ad-Spend/CPL (Facebook) pro Tag · Maus zum Anzeigen`}</span></div></div>
+                  <div className="panel-head"><div><h2>Verlauf</h2><span className="panel-sub">{hourlyDay ? `${verlaufLabel ? `Leads/${verlaufLabel}` : 'Leads'} im Tagesverlauf (0–24 Uhr, minutengenau) · Maus zum Anzeigen` : `${verlaufLabel ? `Leads/${verlaufLabel}` : 'Leads'} (Sheet) & Ad-Spend/CPL (Facebook) pro Tag · Maus zum Anzeigen`}</span></div></div>
                   <div className="charts-stack">
                     {hourlyDay ? (
                       <>
-                        <IntradayChart title={ticketLabel ? `Leads & ${ticketLabel} im Tagesverlauf` : 'Leads im Tagesverlauf'} formatY={(v) => fmtInt(Math.round(v))}
+                        <IntradayChart title={verlaufLabel ? `Leads & ${verlaufLabel} im Tagesverlauf` : 'Leads im Tagesverlauf'} formatY={(v) => fmtInt(Math.round(v))}
                           series={verlaufSeries} />
-                        <div className="info-note">Ad-Spend &amp; CPL sind aktuell nur pro Tag verfügbar – die Stundenwerte dafür folgen. {ticketLabel ? `Leads, ${ticketLabel}` : 'Leads'}{features.hasQuality ? ' & Lead-Qualität' : ''} siehst du oben minutengenau.</div>
+                        <div className="info-note">Ad-Spend &amp; CPL sind aktuell nur pro Tag verfügbar – die Stundenwerte dafür folgen. {verlaufLabel ? `Leads, ${verlaufLabel}` : 'Leads'}{features.hasQuality ? ' & Lead-Qualität' : ''} siehst du oben minutengenau.</div>
                       </>
                     ) : (
                       <>
-                        <TimeChart title={ticketLabel ? `Leads & ${ticketLabel} pro Tag` : 'Leads pro Tag'} formatY={(v) => fmtInt(Math.round(v))}
+                        <TimeChart title={verlaufLabel ? `Leads & ${verlaufLabel} pro Tag` : 'Leads pro Tag'} formatY={(v) => fmtInt(Math.round(v))}
                           series={verlaufSeries} />
                         <div className="charts-grid">
                           <TimeChart title="Ad-Spend pro Tag" formatY={(v) => fmtEur(Math.round(v))}
@@ -249,7 +253,7 @@ export default function App() {
                 </section>
 
                 {/* KPI-Boxen darunter */}
-                <Kpis kpis={kpis} dist={dist} tiers={tiers} qualityDaily={qualityDaily} features={features} accent={accent} labels={project?.labels} />
+                <Kpis kpis={kpis} dist={dist} tiers={tiers} qualityDaily={qualityDaily} features={features} stages={stages} accent={accent} />
 
                 <section className="panel">
                   <div className="panel-head"><div><h2>Bezahlt · Meta</h2><span className="panel-sub">Performance nach Kampagne, Anzeigengruppe, Creative und Placement</span></div></div>
@@ -276,7 +280,7 @@ export default function App() {
                   {!hasFb && (tab === 'creative' || tab === 'placement') && (
                     <div className="info-note">Adspend ist je Anzeigengruppe im Sheet hinterlegt – auf Creative-/Placement-Ebene über die Facebook-Anbindung.</div>
                   )}
-                  <BreakdownTable rows={paidRows} dimLabel={DIMENSIONS.find((d) => d.key === tab).label} onSelect={selectDim} tiers={tiers} features={features} labels={project?.labels} />
+                  <BreakdownTable rows={paidRows} dimLabel={DIMENSIONS.find((d) => d.key === tab).label} onSelect={selectDim} tiers={tiers} features={features} stages={stages} />
                 </section>
 
                 {organicRows.length > 0 && (
@@ -290,7 +294,7 @@ export default function App() {
                         </span>
                       </div>
                     )}
-                    <BreakdownTable rows={organicRows} dimLabel={orgDrill ? 'Unterquelle' : 'Quelle'} onSelect={orgDrill ? undefined : (k) => setOrgDrill(k)} tiers={tiers} features={features} labels={project?.labels} showActiveToggle={false} />
+                    <BreakdownTable rows={organicRows} dimLabel={orgDrill ? 'Unterquelle' : 'Quelle'} onSelect={orgDrill ? undefined : (k) => setOrgDrill(k)} tiers={tiers} features={features} stages={stages} showActiveToggle={false} />
                   </section>
                 )}
               </>
@@ -300,7 +304,7 @@ export default function App() {
               hasFb && fb.hierarchy ? (
                 <section className="panel">
                   <div className="panel-head"><div><h2>Kampagnen-Aufschlüsselung</h2><span className="panel-sub">Kampagne → Anzeigengruppe → Creative · Facebook-Kennzahlen + Lead-Attribution</span></div></div>
-                  <CampaignCards hierarchy={fb.hierarchy} dailyByEntity={fb.dailyByEntity} intradayByEntity={fb.intradayByEntity} intradayDay={fb.intradayDay} accounts={fb.accounts} features={features} accent={accent} labels={project?.labels} />
+                  <CampaignCards hierarchy={fb.hierarchy} dailyByEntity={fb.dailyByEntity} intradayByEntity={fb.intradayByEntity} intradayDay={fb.intradayDay} accounts={fb.accounts} features={features} stages={stages} accent={accent} />
                 </section>
               ) : (
                 <section className="panel">
@@ -313,7 +317,7 @@ export default function App() {
             {view === 'leads' && (
               <section className="panel">
                 <div className="panel-head"><div><h2>Alle Leads</h2><span className="panel-sub">Zeile anklicken für Details &amp; Fragebogen-Antworten</span></div></div>
-                <LeadsTable leads={filtered} tiers={tiers} features={features} labels={project?.labels} />
+                <LeadsTable leads={filtered} tiers={tiers} features={features} stages={stages} />
               </section>
             )}
 
@@ -321,7 +325,7 @@ export default function App() {
 
             <footer className="footer">
               {data.counts.leads} Leads · {data.counts.paidLeads} bezahlt
-              {features.hasTickets && ` · ${data.counts.tickets} ${ticketLabel}`}
+              {stages.map((s) => ` · ${data.counts.stages?.[s.key] ?? 0} ${s.plural}`).join('')}
               {features.hasQuality && ` · ${data.counts.scored} bewertet`}
               {' · '}Quelle: {data.source === 'google' ? 'Google Sheet (live)' : 'Demo'}
             </footer>

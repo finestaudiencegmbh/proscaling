@@ -1,9 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { fmtEur, fmtInt, fmtPct, fmtScore } from '../lib.js';
 
-export default function BreakdownTable({ rows, dimLabel, onSelect, tiers, features = { hasTickets: true, hasQuality: true }, labels = {}, showActiveToggle = true }) {
-  const ticketSg = labels.ticketSingular || 'Ticket';
-  const ticketPl = labels.ticketPlural || 'Tickets';
+export default function BreakdownTable({ rows, dimLabel, onSelect, tiers, features = { hasQuality: true }, stages = [], showActiveToggle = true }) {
   const [sort, setSort] = useState({ col: 'leads', dir: 'desc' });
   const [onlyActive, setOnlyActive] = useState(false);
 
@@ -17,27 +15,28 @@ export default function BreakdownTable({ rows, dimLabel, onSelect, tiers, featur
   const cols = useMemo(() => {
     // Reihenfolge wie gewünscht (links -> rechts)
     const base = [{ key: 'key', label: dimLabel, align: 'left', fmt: (v) => v }];
-    if (hasSpend) base.push({ key: 'spend', label: 'Adspend', fmt: fmtEur });   // 1
-    base.push({ key: 'leads', label: 'Leads', fmt: fmtInt });                   // 2
-    if (features.hasTickets) base.push({ key: 'tickets', label: ticketPl, fmt: fmtInt }); // 3
-    if (hasSpend) {
-      base.push({ key: 'cpl', label: '€/Lead', fmt: fmtEur });                 // 4
-      if (features.hasTickets) base.push({ key: 'cpt', label: `€/${ticketSg}`, fmt: fmtEur }); // 5
-    }
+    if (hasSpend) base.push({ key: 'spend', label: 'Adspend', fmt: fmtEur });   // Adspend
+    base.push({ key: 'leads', label: 'Leads', fmt: fmtInt });                   // Leads
+    // Pro Funnel-Stufe: Anzahl, Kosten/Stufe (bei Spend) und CVR von der Vorstufe.
+    stages.forEach((s, i) => {
+      base.push({ key: `st_${s.key}_n`, label: s.plural, fmt: fmtInt });
+      if (hasSpend) base.push({ key: `st_${s.key}_cpa`, label: `€/${s.short || s.singular}`, fmt: fmtEur });
+      base.push({ key: `st_${s.key}_cvr`, label: `CVR ${i === 0 ? 'Lead' : (stages[i - 1].short || stages[i - 1].singular)}→${s.short || s.singular}`, fmt: fmtPct });
+    });
+    if (hasSpend) base.push({ key: 'cpl', label: '€/Lead', fmt: fmtEur });
     if (features.hasQuality) {
-      base.push({ key: 'qualifiedRate', label: 'Quali-Rate', fmt: fmtPct });   // 6
-      base.push({ key: 'avgQuality', label: 'Ø Quali', fmt: fmtScore });       // 7
+      base.push({ key: 'qualifiedRate', label: 'Quali-Rate', fmt: fmtPct });
+      base.push({ key: 'avgQuality', label: 'Ø Quali', fmt: fmtScore });
     }
-    if (hasOutbound) base.push({ key: 'cvrStart', label: 'CVR Start', fmt: fmtPct }); // 8
-    if (features.hasTickets) base.push({ key: 'ticketRate', label: `CVR ${ticketSg}`, fmt: fmtPct }); // 9
-    if (hasImpressions) base.push({ key: 'cpm', label: 'CPM', fmt: fmtEur });   // 10
+    if (hasOutbound) base.push({ key: 'cvrStart', label: 'CVR Start', fmt: fmtPct });
+    if (hasImpressions) base.push({ key: 'cpm', label: 'CPM', fmt: fmtEur });
     if (hasOutbound) {
-      base.push({ key: 'outboundCtr', label: 'CTR (ausg.)', fmt: fmtPct });    // 11
-      base.push({ key: 'cpoc', label: 'CPC (ausg.)', fmt: fmtEur });           // 12
-      base.push({ key: 'outboundClicks', label: 'Ausg. Klicks', fmt: fmtInt }); // 13
+      base.push({ key: 'outboundCtr', label: 'CTR (ausg.)', fmt: fmtPct });
+      base.push({ key: 'cpoc', label: 'CPC (ausg.)', fmt: fmtEur });
+      base.push({ key: 'outboundClicks', label: 'Ausg. Klicks', fmt: fmtInt });
     }
     return base;
-  }, [dimLabel, hasSpend, hasImpressions, hasOutbound, features.hasTickets, features.hasQuality, ticketSg, ticketPl]);
+  }, [dimLabel, hasSpend, hasImpressions, hasOutbound, features.hasQuality, stages]);
 
   const sorted = useMemo(() => {
     const arr = [...visibleRows];

@@ -1,7 +1,8 @@
 /**
- * Test für die Feature-Flags (hasTickets / hasQuality) und den Config-Loader.
- * Stellt sicher, dass bei deaktivierten Flags KEINE Ticket-/Qualitäts-Daten
- * mehr entstehen, das Lead-Geschäft aber unverändert weiterläuft.
+ * Test für das generische Funnel-Stufen-Modell + den Config-Loader.
+ * Prüft: (1) Default = eine Stufe "Ticket" mit Qualität (wie der alte Workshop),
+ * (2) keine Stufen -> reines Lead-Dashboard, (3) zwei Stufen (EG -> ZG) mit
+ * E-Mail-Join und stufen-eigener Attribution.
  * Ausführen: node server/config.test.mjs
  */
 import assert from 'node:assert/strict';
@@ -10,58 +11,95 @@ import { buildDataset } from './build.js';
 import { loadScoringConfig } from './scoring.js';
 import { DEFAULTS } from './config.js';
 
-// Sheet wie im Parser-Test (Leads + Übersicht + Ticket-/Fragebogen-Tab)
+const cfg = loadScoringConfig();
+
+// --- 1) Default: eine Stufe "Ticket" mit Qualität --------------------------
 const overviewSheet = {
-  title: 'Anzeigengruppen',
+  title: 'Übersicht',
   values: [
-    ['Status', 'Anzeigengruppe', 'Adspend', 'Ausg. Klicks', 'CPC', 'CVR Optin', 'CVR Ticket', 'CPL', 'Pro Ticket', 'Quali Rate Ticket', 'Leads', 'VIP Ticket', 'Ticket Nicht Qualifiziert', 'Ticket Qualifiziert'],
-    ['AUS', 'J&P | LP 1 | Broad | DACH | W | 30-55', '1.030,66 €', '134', '7,69 €', '9,70%', '46,15%', '79,28 €', '171,78 €', '0,00%', '13', '6', '6', '0'],
+    ['Status', 'Anzeigengruppe', 'Adspend', 'Leads', 'VIP Ticket'],
+    ['AUS', 'J&P | LP 1 | Broad | DACH | W | 30-55', '1.030,66 €', '13', '6'],
   ],
 };
 const leadsSheet = {
   title: 'Leads',
   values: [
     ['Gewonnen am', 'Vorname', 'Nachname', 'E-Mail', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'VIP-Ticket geholt am'],
-    ['2026-05-26 20:42:50 +0000', 'Rebecca', 'Schießl', 'schiessl.rebecca@gmail.com', 'J&P | LP 1 | Broad | DACH | W | 30-55', 'LP 1 - Static 16', 'J&P | MMV | ABO | 260526', 'Facebook_Mobile_Feed', '2026-05-26 20:47:35 +0000'],
-    ['2026-05-26 21:00:00 +0000', 'Max', 'Organik', 'max@example.com', 'instagram', 'bio', 'moneymaker-workshop-2026', 'workshop-anmeldung', ''],
+    ['2026-05-26 20:42:50 +0000', 'Rebecca', 'Schießl', 'rebecca@gmail.com', 'J&P | LP 1 | Broad | DACH | W | 30-55', 'LP 1 - Static 16', 'J&P | MMV | ABO', 'Facebook_Mobile_Feed', '2026-05-26 20:47:35 +0000'],
+    ['2026-05-26 21:00:00 +0000', 'Max', 'Organik', 'max@example.com', 'instagram', 'bio', 'moneymaker-workshop', 'x', ''],
   ],
 };
 const ticketsSheet = {
   title: 'VIP Ticket',
   values: [
     ['Teilgenommen am', 'Vorname', 'Nachname', 'E-Mail (Funnelcockpit)', 'E-Mail (Typeform)', 'Handynummer', 'Monatliches Einkommen', 'Immobilien im Besitz?', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term'],
-    ['2026-05-26 20:47:35 +0000', 'Rebecca', 'Schießl', 'schiessl.rebecca@gmail.com', 'schiessl.rebecca@gmail.com', '+491783420945', '3.500-5.000 im Monat', 'Ja, mehrere', 'J&P | LP 1 | Broad | DACH | W | 30-55', 'LP 1 - Static 16', 'J&P | MMV | ABO | 260526', 'Facebook_Mobile_Feed'],
+    ['2026-05-26 20:47:35 +0000', 'Rebecca', 'Schießl', 'rebecca@gmail.com', 'rebecca@gmail.com', '+49170', '3.500-5.000 im Monat', 'Ja, mehrere', 'J&P | LP 1 | Broad | DACH | W | 30-55', 'LP 1 - Static 16', 'J&P | MMV | ABO', 'Facebook_Mobile_Feed'],
   ],
 };
-const sheets = [overviewSheet, leadsSheet, ticketsSheet];
-const cfg = loadScoringConfig();
+const defParsed = parseSheets([overviewSheet, leadsSheet, ticketsSheet], DEFAULTS);
+const def = buildDataset(defParsed, cfg, DEFAULTS);
+assert.equal(defParsed.tickets.length, 1, 'Default: Ticket-Tab erkannt');
+assert.equal(def.counts.tickets, 1, 'Default: Ticket gezählt');
+assert.equal(def.counts.stages.ticket, 1, 'Default: Stufe ticket = 1');
+assert.ok(def.leads.find((l) => l.email === 'rebecca@gmail.com').quality, 'Default: Qualität berechnet');
 
-// 1) Defaults: Tickets + Qualität AN (Referenz)
-const onParsed = parseSheets(sheets, DEFAULTS);
-const on = buildDataset(onParsed, cfg, DEFAULTS);
-assert.equal(onParsed.tickets.length, 1, 'Ticket-Tab erkannt, wenn Flags an');
-assert.equal(on.counts.tickets, 1, 'Ticket gezählt');
-assert.ok(on.leads.find((l) => l.email === 'schiessl.rebecca@gmail.com').quality, 'Qualität berechnet');
+// --- 2) Keine Stufen: reines Lead-Dashboard --------------------------------
+const noStages = { ...DEFAULTS, features: { hasQuality: false }, stages: [] };
+const nsParsed = parseSheets([overviewSheet, leadsSheet, ticketsSheet], noStages);
+const ns = buildDataset(nsParsed, cfg, noStages);
+assert.equal(ns.counts.leads, 2, 'Keine Stufen: Lead-Anzahl unverändert');
+assert.equal(ns.counts.tickets, 0, 'Keine Stufen: keine Tickets');
+assert.equal(ns.leads.every((l) => l.hasTicket === false), true, 'Keine Stufen: kein Lead trägt ein Ticket');
+assert.equal(ns.leads.every((l) => l.quality === null), true, 'Keine Stufen: keine Qualität');
 
-// 2) Beide Flags AUS: keine Tickets, keine Qualität – Leads unverändert
-const noFeatures = { ...DEFAULTS, features: { hasTickets: false, hasQuality: false } };
-const offParsed = parseSheets(sheets, noFeatures);
-const off = buildDataset(offParsed, cfg, noFeatures);
-assert.equal(offParsed.tickets.length, 0, 'Ticket-/Fragebogen-Tab wird ohne Flags nicht als Tickets erkannt');
-assert.equal(off.counts.leads, 2, 'Lead-Anzahl unverändert');
-assert.equal(off.counts.tickets, 0, 'keine Tickets, wenn hasTickets=false');
-assert.equal(off.counts.scored, 0, 'keine Qualität, wenn hasQuality=false');
-assert.equal(off.leads.every((l) => l.hasTicket === false), true, 'kein Lead trägt ein Ticket');
-assert.equal(off.leads.every((l) => l.quality === null), true, 'kein Lead trägt eine Qualität');
-// Übersicht/Spend bleibt erhalten
-assert.ok(off.overviewByAdset['j&p | lp 1 | broad | dach | w | 30-55'].adspend === 1030.66, 'Adspend weiter geparst');
+// --- 3) Zwei Stufen: Erstgespräch -> Zweitgespräch (E-Mail-Join) ------------
+const twoStage = {
+  ...DEFAULTS,
+  features: { hasQuality: false },
+  stages: [
+    { key: 'eg', singular: 'Erstgespräch', plural: 'Erstgespräche', short: 'EG', sheet: { classifyHas: ['e-mail', 'klient'], date: 'datum', name: 'name', emailColumns: ['e-mail'], utmSource: 'utm source', utmMedium: 'utm medium', utmCampaign: 'utm campaign', utmTerm: 'utm term' } },
+    { key: 'zg', singular: 'Zweitgespräch', plural: 'Zweitgespräche', short: 'ZG', sheet: { classifyHas: ['e-mail', 'closer'], date: 'datum', name: 'name', emailColumns: ['e-mail'], utmSource: 'utm source 1', utmMedium: 'utm medium 1', utmCampaign: 'utm campaign 1', utmTerm: 'utm term 1' } },
+  ],
+  sheet: { ...DEFAULTS.sheet, lead: { classifyHas: ['datum'], classifySome: ['e-mail', 'utm source'], wonAt: 'datum', name: 'name', email: 'e-mail', utmSource: 'utm source', utmMedium: 'utm medium', utmCampaign: 'utm campaign', utmTerm: 'utm term' } },
+};
+const psLeads = {
+  title: 'Leadliste',
+  values: [
+    ['Datum', 'Name', 'E-Mail', 'Telefon', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Term', 'A/B'],
+    ['2026-05-09 16:33:20 +0000', 'Nico', 'nico@gmx.de', '+49170', 'AG1: SIT // DE AT // 25-55', 'C2: Ratespiel H1', 'ABO Leads', 'Instagram_Reels', 'V1'],
+    ['2026-05-09 17:00:00 +0000', 'Lara', 'lara@gmail.com', '+49171', 'AG1: SIT // DE AT // 25-55', 'C2: Ratespiel H1', 'ABO Leads', 'Instagram_Stories', 'V1'],
+    ['2026-05-10 09:00:00 +0000', 'News', 'news@x.de', '+49172', 'newsletter', 'finestaudience', 'link-1', '', 'V1'],
+  ],
+};
+const psEg = {
+  title: 'EGs',
+  values: [
+    ['Datum', 'Name', 'E-Mail', 'Telefon', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Term', 'Klient'],
+    ['2026-05-11 10:00:00 +0000', 'Nico', 'nico@gmx.de', '+49170', 'AG1: SIT // DE AT // 25-55', 'C2: Ratespiel H1', 'ABO Leads', 'Instagram_Reels', ''],
+  ],
+};
+const psZg = {
+  title: 'ZGs',
+  values: [
+    ['Datum', 'Name', 'E-Mail', 'Telefon', 'UTM Source 1', 'UTM Medium 1', 'UTM Campaign 1', 'UTM Term 1', 'Closer'],
+    ['2026-05-12 10:00:00 +0000', 'Nico', 'nico@gmx.de', '+49170', 'AG1: SIT // DE AT // 25-55', 'C2: Ratespiel H1', 'ABO Leads', 'Instagram_Reels', 'Tom'],
+  ],
+};
+const tsParsed = parseSheets([psLeads, psEg, psZg], twoStage);
+assert.equal(tsParsed.leads.length, 3, 'Zwei Stufen: 3 Leads geparst');
+assert.equal(tsParsed.stages.eg.length, 1, 'EG-Tab erkannt');
+assert.equal(tsParsed.stages.zg.length, 1, 'ZG-Tab erkannt');
 
-// 3) Nur Qualität aus (Tickets an): Tickets gezählt, aber kein Score
-const noQuality = { ...DEFAULTS, features: { hasTickets: true, hasQuality: false } };
-const nqParsed = parseSheets(sheets, noQuality);
-const nq = buildDataset(nqParsed, cfg, noQuality);
-assert.equal(nq.counts.tickets, 1, 'Tickets weiterhin gezählt');
-assert.equal(nq.counts.scored, 0, 'aber keine Qualität, wenn hasQuality=false');
+const ts = buildDataset(tsParsed, cfg, twoStage);
+assert.equal(ts.counts.leads, 3, 'Zwei Stufen: 3 Datensätze');
+assert.equal(ts.counts.stages.eg, 1, 'eg-Stufe gezählt');
+assert.equal(ts.counts.stages.zg, 1, 'zg-Stufe gezählt');
+const nico = ts.leads.find((l) => l.email === 'nico@gmx.de');
+assert.ok(nico.stages.eg && nico.stages.zg, 'Nico hat EG und ZG (per E-Mail gejoint)');
+assert.equal(nico.sourceType, 'paid', 'Nico ist bezahlt (// im Targeting)');
+const news = ts.leads.find((l) => l.email === 'news@x.de');
+assert.equal(news.sourceType, 'organic', 'Newsletter-Lead ist organisch');
+assert.equal(Boolean(news.stages.eg), false, 'Newsletter-Lead hat kein EG');
 
-console.log('✓ Alle Feature-Flag-Tests bestanden');
-console.log(`  an: tickets=${on.counts.tickets} scored=${on.counts.scored} | aus: leads=${off.counts.leads} tickets=${off.counts.tickets}`);
+console.log('✓ Alle Funnel-Stufen-Tests bestanden');
+console.log(`  Default: tickets=${def.counts.tickets} | keine Stufen: leads=${ns.counts.leads} | zwei Stufen: eg=${ts.counts.stages.eg} zg=${ts.counts.stages.zg}`);

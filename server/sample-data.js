@@ -2,8 +2,10 @@
  * Synthetische Demo-Daten – KEINE echten Personendaten.
  * Dienen nur dazu, das Dashboard ohne Google-Anbindung sofort ansehbar zu
  * machen. Struktur identisch zu den geparsten Sheet-Daten, fließt also durch
- * dieselbe buildDataset-Pipeline.
+ * dieselbe buildDataset-Pipeline – generisch über die konfigurierten Stufen.
  */
+
+import { DEFAULTS } from './config.js';
 
 const campaigns = [
   'J&P | MMV 15.06.-18.06. | ABO | 260526',
@@ -34,11 +36,23 @@ function rand(arr, i) {
   return arr[i % arr.length];
 }
 
-export function getSampleParsed() {
+export function getSampleParsed(project = DEFAULTS) {
+  const stageDefs = project.stages || [];
   const leads = [];
-  const tickets = [];
+  const stages = {};
+  for (const s of stageDefs) stages[s.key] = [];
   let seed = 7;
   const next = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+
+  const demoAnswers = () => ({
+    employment: rand(employments, Math.floor(next() * 5)),
+    challenge: 'Demo-Antwort',
+    income: rand(incomes, Math.floor(next() * 5)),
+    realEstate: rand(realEstate, Math.floor(next() * 4)),
+    invested: rand(investedOptions, Math.floor(next() * 6)),
+    relationship: 'Ledig',
+    expectation: 'Klarer Plan',
+  });
 
   for (let i = 0; i < 48; i++) {
     const campaign = i % 5 < 3 ? campaigns[0] : campaigns[1];
@@ -48,39 +62,24 @@ export function getSampleParsed() {
     const email = `demo.lead${i}@example.com`;
     const day = 24 + (i % 4);
     const wonAt = new Date(Date.UTC(2026, 4, day, 10 + (i % 12), (i * 7) % 60, 0)).toISOString();
-    const gotTicket = next() < 0.45;
-    leads.push({
-      wonAt,
-      firstName: `Demo${i}`,
-      lastName: 'Person',
-      email,
-      utm: {
-        source: adset,
-        medium: `${adset.includes('LP 3') ? 'AG1 LP 3' : adset.match(/LP \d/)?.[0] || 'LP 2'} - ${creative}`,
-        campaign,
-        term: placement,
-      },
-      ticketAt: gotTicket ? wonAt : null,
-    });
-    if (gotTicket) {
-      tickets.push({
-        at: wonAt,
-        firstName: `Demo${i}`,
-        lastName: 'Person',
-        email,
-        emailTypeform: email,
-        phone: `+49150${String(1000000 + i)}`,
-        answers: {
-          employment: rand(employments, Math.floor(next() * 5)),
-          challenge: 'Demo-Antwort',
-          income: rand(incomes, Math.floor(next() * 5)),
-          realEstate: rand(realEstate, Math.floor(next() * 4)),
-          invested: rand(investedOptions, Math.floor(next() * 6)),
-          relationship: 'Ledig',
-          expectation: 'Klarer Plan',
-        },
-        utm: { source: adset, medium: '', campaign, term: placement },
-      });
+    const utm = {
+      source: adset,
+      medium: `${adset.includes('LP 3') ? 'AG1 LP 3' : adset.match(/LP \d/)?.[0] || 'LP 2'} - ${creative}`,
+      campaign,
+      term: placement,
+    };
+    leads.push({ wonAt, firstName: `Demo${i}`, lastName: 'Person', email, phone: `+49150${String(1000000 + i)}`, utm, markers: {} });
+
+    // Personen kaskadierend durch die Stufen (je tiefer, desto seltener).
+    let reached = true;
+    let when = wonAt;
+    for (const s of stageDefs) {
+      reached = reached && next() < 0.5;
+      if (!reached) break;
+      when = new Date(new Date(when).getTime() + 36e5 * (1 + Math.floor(next() * 6))).toISOString();
+      const row = { at: when, firstName: `Demo${i}`, lastName: 'Person', email, emailSecondary: email, phone: `+49150${String(1000000 + i)}`, utm: { ...utm } };
+      if (s.answers) row.answers = demoAnswers();
+      stages[s.key].push(row);
     }
   }
 
@@ -91,25 +90,21 @@ export function getSampleParsed() {
       firstName: `Organic${i}`,
       lastName: 'Person',
       email: `demo.organic${i}@example.com`,
+      phone: '',
       utm: { source: rand(['instagram', 'fb-bio', 'yt-bio'], i), medium: 'bio', campaign: 'moneymaker-workshop-2026', term: 'workshop-anmeldung' },
-      ticketAt: null,
+      markers: {},
     });
   }
 
   const overview = adsets.map((adset, i) => ({
     status: i % 3 === 0 ? 'AUS' : 'AN',
     adset,
+    matches: 'adset',
     adspend: 800 + i * 350,
     clicks: 90 + i * 20,
     cpc: 6 + i,
-    cvrOptin: 9 + i,
-    cvrTicket: 20 + i,
-    cpl: 50 + i * 8,
     leads: 12 + i,
-    tickets: 3 + (i % 4),
-    ticketsQualified: i % 3,
-    ticketsUnqualified: 2,
   }));
 
-  return { leads, tickets, overview };
+  return { leads, stages, tickets: stages.ticket || [], overview };
 }
