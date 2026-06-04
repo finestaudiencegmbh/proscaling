@@ -185,8 +185,12 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
 
   // 2) Stufen-Zeilen, deren E-Mail in KEINER Lead-Zeile vorkommt, als eigene
   //    Datensätze ergänzen. Mehrere Stufen derselben Person -> EIN Datensatz.
+  //    Stufen mit requireLead = true (z. B. Erst-/Zweitgespräch im Sales-Funnel)
+  //    sind Teilmengen der Leads: eine Zeile ohne passenden Lead erzeugt KEINEN
+  //    Phantom-Lead (sonst künstliche 100 % Conversion).
   const extras = new Map();
   for (const s of stageDefs) {
+    if (s.requireLead) continue;
     for (const row of (stages[s.key] || [])) {
       if ((row.email && seenLeadEmails.has(row.email)) || (row.emailSecondary && seenLeadEmails.has(row.emailSecondary))) continue;
       const identity = row.email || row.emailSecondary || '';

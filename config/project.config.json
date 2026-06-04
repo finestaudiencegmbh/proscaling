@@ -25,6 +25,7 @@
       "plural": "Erstgespräche",
       "short": "EG",
       "color": "#6fcf97",
+      "requireLead": true,
       "sheet": {
         "classifyHas": ["e-mail", "klient"],
         "date": "datum",
@@ -43,6 +44,7 @@
       "plural": "Zweitgespräche",
       "short": "ZG",
       "color": "#5ad0c0",
+      "requireLead": true,
       "sheet": {
         "classifyHas": ["e-mail", "closer"],
         "date": "datum",
