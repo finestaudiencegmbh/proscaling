@@ -93,9 +93,12 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
       const agg = aggregateFb(all.records);
       // Leads für denselben Zeitraum, damit FB-Hierarchie & Leads konsistent sind
       const leadsInRange = filterLeadsByRange(dataset.leads, from, to);
+      // Stufen-Events je nach eigenem Datum auf den Zeitraum begrenzen
+      const stageRecordsInRange = {};
+      for (const [k, evs] of Object.entries(dataset.stageRecords || {})) stageRecordsInRange[k] = filterLeadsByRange(evs, from, to);
       // Stunden-Raster, wenn genau ein Tag gewählt ist
       const hourlyDay = from && to && from === to ? from : null;
-      const combined = combineMetaWithLeads(all, leadsInRange, { hourlyDay, stages: project.stages });
+      const combined = combineMetaWithLeads(all, leadsInRange, { hourlyDay, stages: project.stages, stageRecords: stageRecordsInRange });
       fb = { configured: true, provider: 'meta', error: null, fetchedAt: new Date().toISOString(), ...agg, hierarchy: combined.hierarchy, daily: combined.daily, totals: combined.totals, nonLeadCampaigns: combined.nonLeadCampaigns, uocByDim: combined.uocByDim, dimMeta: combined.dimMeta, dailyByEntity: combined.dailyByEntity, intradayByEntity: combined.intradayByEntity, intradayDay: combined.intradayDay, accounts: all.accounts };
     } else {
       fb.error = metaErr;
@@ -120,6 +123,7 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
     fb,
     ...dataset,
   };
+  // stageRecords ist Teil von dataset (separate Funnel-Stufen-Events fürs Frontend)
   cache.set(key, { at: Date.now(), payload });
   return payload;
 }

@@ -57,8 +57,8 @@ const twoStage = {
   ...DEFAULTS,
   features: { hasQuality: false },
   stages: [
-    { key: 'eg', singular: 'Erstgespräch', plural: 'Erstgespräche', short: 'EG', requireLead: true, sheet: { classifyHas: ['e-mail', 'klient'], date: 'datum', name: 'name', emailColumns: ['e-mail'], utmSource: 'utm source', utmMedium: 'utm medium', utmCampaign: 'utm campaign', utmTerm: 'utm term' } },
-    { key: 'zg', singular: 'Zweitgespräch', plural: 'Zweitgespräche', short: 'ZG', requireLead: true, sheet: { classifyHas: ['e-mail', 'closer'], date: 'datum', name: 'name', emailColumns: ['e-mail'], utmSource: 'utm source 1', utmMedium: 'utm medium 1', utmCampaign: 'utm campaign 1', utmTerm: 'utm term 1' } },
+    { key: 'eg', singular: 'Erstgespräch', plural: 'Erstgespräche', short: 'EG', standalone: true, sheet: { classifyHas: ['e-mail', 'klient'], date: 'datum', name: 'name', emailColumns: ['e-mail'], utmSource: 'utm source', utmMedium: 'utm medium', utmCampaign: 'utm campaign', utmTerm: 'utm term' } },
+    { key: 'zg', singular: 'Zweitgespräch', plural: 'Zweitgespräche', short: 'ZG', standalone: true, sheet: { classifyHas: ['e-mail', 'closer'], date: 'datum', name: 'name', emailColumns: ['e-mail'], utmSource: 'utm source 1', utmMedium: 'utm medium 1', utmCampaign: 'utm campaign 1', utmTerm: 'utm term 1' } },
   ],
   sheet: { ...DEFAULTS.sheet, lead: { classifyHas: ['datum'], classifySome: ['e-mail', 'utm source'], wonAt: 'datum', name: 'name', email: 'e-mail', utmSource: 'utm source', utmMedium: 'utm medium', utmCampaign: 'utm campaign', utmTerm: 'utm term' } },
 };
@@ -76,7 +76,8 @@ const psEg = {
   values: [
     ['Datum', 'Name', 'E-Mail', 'Telefon', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Term', 'Klient'],
     ['2026-05-11 10:00:00 +0000', 'Nico', 'nico@gmx.de', '+49170', 'AG1: SIT // DE AT // 25-55', 'C2: Ratespiel H1', 'ABO Leads', 'Instagram_Reels', ''],
-    // EG-Zeile OHNE passenden Lead -> darf KEINEN Phantom-Lead erzeugen (requireLead)
+    // EG-Zeile OHNE passenden Lead -> wird trotzdem eigenständig als EG gezählt (standalone),
+    // erzeugt aber KEINEN Lead-Datensatz.
     ['2026-05-11 11:00:00 +0000', 'Geist', 'ghost@nowhere.de', '+49199', 'AG1: SIT // DE AT // 25-55', 'C2: Ratespiel H1', 'ABO Leads', 'Instagram_Reels', ''],
   ],
 };
@@ -93,16 +94,19 @@ assert.equal(tsParsed.stages.eg.length, 2, 'EG-Tab erkannt (2 Zeilen)');
 assert.equal(tsParsed.stages.zg.length, 1, 'ZG-Tab erkannt');
 
 const ts = buildDataset(tsParsed, cfg, twoStage);
-assert.equal(ts.counts.leads, 3, 'Zwei Stufen: 3 Datensätze (requireLead -> kein Phantom-Lead aus der EG-Zeile ohne Lead)');
-assert.equal(ts.counts.stages.eg, 1, 'eg-Stufe nur für gematchten Lead gezählt');
-assert.equal(ts.counts.stages.zg, 1, 'zg-Stufe gezählt');
-assert.equal(ts.leads.find((l) => l.email === 'ghost@nowhere.de'), undefined, 'EG ohne Lead erzeugt keinen Datensatz');
+assert.equal(ts.counts.leads, 3, 'Zwei Stufen: 3 Leads (standalone -> Stufen erzeugen KEINE Lead-Datensätze)');
+assert.equal(ts.counts.stages.eg, 2, 'eg eigenständig aus dem EG-Tab gezählt (beide Zeilen, auch ohne Lead)');
+assert.equal(ts.counts.stages.zg, 1, 'zg eigenständig aus dem ZG-Tab gezählt');
+assert.equal(ts.stageRecords.eg.length, 2, 'stageRecords.eg = 2 Events');
+assert.equal(ts.leads.find((l) => l.email === 'ghost@nowhere.de'), undefined, 'EG-Zeile ohne Lead erzeugt keinen Lead-Datensatz');
 const nico = ts.leads.find((l) => l.email === 'nico@gmx.de');
-assert.ok(nico.stages.eg && nico.stages.zg, 'Nico hat EG und ZG (per E-Mail gejoint)');
+assert.equal(Object.keys(nico.stages).length, 0, 'eigenständige Stufen werden NICHT an den Lead gehängt (kein Join)');
 assert.equal(nico.sourceType, 'paid', 'Nico ist bezahlt (// im Targeting)');
+// Stufen-Attribution über die stufen-eigene UTM
+const egPaid = ts.stageRecords.eg.filter((e) => e.sourceType === 'paid').length;
+assert.equal(egPaid, 2, 'beide EG-Events sind bezahlt (// im Targeting)');
 const news = ts.leads.find((l) => l.email === 'news@x.de');
 assert.equal(news.sourceType, 'organic', 'Newsletter-Lead ist organisch');
-assert.equal(Boolean(news.stages.eg), false, 'Newsletter-Lead hat kein EG');
 
 console.log('✓ Alle Funnel-Stufen-Tests bestanden');
 console.log(`  Default: tickets=${def.counts.tickets} | keine Stufen: leads=${ns.counts.leads} | zwei Stufen: eg=${ts.counts.stages.eg} zg=${ts.counts.stages.zg}`);

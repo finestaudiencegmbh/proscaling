@@ -130,7 +130,7 @@ export function loadProjectConfig() {
 export function publicProject(project = loadProjectConfig()) {
   const { name, subtitle, branding, features, labels } = project;
   const stages = (project.stages || []).map((s) => ({
-    key: s.key, singular: s.singular, plural: s.plural, short: s.short || s.singular, color: s.color || '#6fcf97', quality: Boolean(s.quality),
+    key: s.key, singular: s.singular, plural: s.plural, short: s.short || s.singular, color: s.color || '#6fcf97', quality: Boolean(s.quality), standalone: Boolean(s.standalone),
   }));
   return { name, subtitle, branding, features, labels, stages };
 }

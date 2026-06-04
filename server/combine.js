@@ -149,16 +149,15 @@ export function combineMetaWithLeads(meta, leads, opts = {}) {
     return { leads: L.leads, tickets: T.tickets, scoreSum: T.scoreSum, scored: T.scored, qualified: T.qualified };
   };
 
-  // Generische Funnel-Stufen (z. B. EG, ZG): je Stufe & Dimension zählen,
-  // attribuiert über die stufen-eigene Herkunft (l.stages[key]).
+  // Generische Funnel-Stufen (z. B. EG, ZG): je Stufe & Dimension aus den
+  // eigenständigen Stufen-Events zählen (eigenes Datum/eigene UTM, kein Lead-Join).
   const stageDefs = opts.stages || [];
+  const stageRecords = opts.stageRecords || {};
   const stageBy = {};
   for (const s of stageDefs) stageBy[s.key] = { campaign: new Map(), adset: new Map(), creative: new Map() };
-  for (const l of leads || []) {
-    for (const s of stageDefs) {
-      const hit = l.stages?.[s.key];
-      if (!hit) continue;
-      const parts = { campaign: hit.campaign, adset: hit.adset, creative: hit.creative };
+  for (const s of stageDefs) {
+    for (const ev of (stageRecords[s.key] || [])) {
+      const parts = { campaign: ev.campaign, adset: ev.adset, creative: ev.creative };
       for (const dim of ['campaign', 'adset', 'creative']) {
         if (!normKey(leafName(dim, parts))) continue;
         const k = pathKey(dim, parts);

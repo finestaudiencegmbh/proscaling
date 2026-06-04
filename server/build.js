@@ -165,6 +165,7 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
     let lastName = l.lastName || '';
     let phone = l.phone || '';
     for (const s of stageDefs) {
+      if (s.standalone) continue; // eigenständige Stufen werden NICHT an Leads gejoint
       const row = email ? stageIndex[s.key].get(email) : null;
       const markerAt = l.markers?.[s.key] || null;
       if (!row && !markerAt) continue;
@@ -190,7 +191,7 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
   //    Phantom-Lead (sonst künstliche 100 % Conversion).
   const extras = new Map();
   for (const s of stageDefs) {
-    if (s.requireLead) continue;
+    if (s.standalone || s.requireLead) continue;
     for (const row of (stages[s.key] || [])) {
       if ((row.email && seenLeadEmails.has(row.email)) || (row.emailSecondary && seenLeadEmails.has(row.emailSecondary))) continue;
       const identity = row.email || row.emailSecondary || '';
@@ -208,6 +209,31 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
   }
   for (const e of extras.values()) recs.push(e);
 
+  // Baut ein eigenständiges Stufen-Event (Anzahl/Datum/Quelle/Dimensionen nur aus
+  // der STUFEN-EIGENEN UTM – ohne Bezug zur Leadliste).
+  const makeStageEvent = (utm, at, person) => {
+    const d = dimsFor(utm);
+    const ev = {
+      wonAt: at,
+      sourceType: d.paid ? 'paid' : 'organic',
+      campaign: d.campaign,
+      adset: d.adset,
+      creative: d.creative,
+      placement: placementLabel(utm.term),
+      placementRaw: collapse(utm.term),
+      sourceRaw: collapse(utm.source),
+      campaignRaw: collapse(utm.campaign),
+      mediumRaw: collapse(utm.medium),
+      name: person.name || collapse(`${person.firstName || ''} ${person.lastName || ''}`) || '(ohne Name)',
+      email: person.email || '',
+      phone: person.phone || '',
+    };
+    if (!d.paid) { const o = organicLabels(utm); ev.organicCampaign = o.campaign; ev.organicAdset = o.adset; }
+    return ev;
+  };
+  const stageEvents = {};
+  for (const s of stageDefs) stageEvents[s.key] = [];
+
   // 3) Finalisieren: Dimensionen, Quelle, Stufen-Attribution, Qualität
   const records = [];
   for (const r of recs) {
@@ -221,6 +247,8 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
     for (const [k, hit] of Object.entries(r.stageHits)) {
       const d = dimsFor(hit.utm);
       stagesOut[k] = { at: hit.at, campaign: d.campaign, adset: d.adset, creative: d.creative };
+      // gejointe Stufen liefern auch ein eigenständiges Event (für einheitliches Zählen)
+      stageEvents[k].push(makeStageEvent(hit.utm, hit.at, { name: collapse(`${r.firstName} ${r.lastName}`), email: r.email, phone: r.phone }));
     }
 
     // Rückwärtskompatible Ticket-Felder = die Stufe mit key 'ticket' (sofern vorhanden).
@@ -259,6 +287,15 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
     });
   }
 
+  // Eigenständige Stufen (z. B. Erst-/Zweitgespräch): komplett aus ihrem eigenen
+  // Tab zählen – eigenes Datum, eigene UTM, KEIN Abgleich mit der Leadliste.
+  for (const s of stageDefs) {
+    if (!s.standalone) continue;
+    for (const row of (stages[s.key] || [])) {
+      stageEvents[s.key].push(makeStageEvent(row.utm, row.at, row));
+    }
+  }
+
   // Spend-Übersicht: nach Dimension verdichten (mehrere Kampagnen-Tabs)
   const overviewByAdset = new Map();
   for (const o of overview) {
@@ -268,6 +305,7 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
 
   return {
     leads: records,
+    stageRecords: stageEvents,
     overview,
     overviewByAdset: Object.fromEntries(overviewByAdset),
     warnings,
@@ -276,7 +314,7 @@ export function buildDataset({ leads, stages = {}, tickets, overview = [] }, cfg
       paidLeads: records.filter((r) => r.sourceType === 'paid').length,
       tickets: records.filter((r) => r.hasTicket).length,
       scored: records.filter((r) => r.quality).length,
-      stages: Object.fromEntries(stageDefs.map((s) => [s.key, records.filter((r) => r.stages[s.key]).length])),
+      stages: Object.fromEntries(stageDefs.map((s) => [s.key, stageEvents[s.key].length])),
     },
   };
 }

@@ -17,7 +17,7 @@
     "hasQuality": false
   },
 
-  "_comment_stages": "Funnel-Stufen NACH dem Lead. Jede Stufe ist ein eigener Sheet-Tab, per E-Mail an den Lead gejoint, mit eigener UTM-Attribution. classifyHas erkennt den Tab an einer eindeutigen Spalte (EG: 'klient', ZG: 'closer'). UTM-Spalten der ZG heißen im Sheet 'UTM Source 1' usw.",
+  "_comment_stages": "Funnel-Stufen NACH dem Lead. standalone=true: die Stufe wird KOMPLETT eigenständig aus ihrem eigenen Tab gezählt – eigenes Datum, eigene UTM-Attribution, KEIN Abgleich mit der Leadliste. classifyHas erkennt den Tab an einer eindeutigen Spalte (EG: 'klient', ZG: 'closer'). UTM-Spalten der ZG heißen im Sheet 'UTM Source 1' usw.",
   "stages": [
     {
       "key": "eg",
@@ -25,7 +25,7 @@
       "plural": "Erstgespräche",
       "short": "EG",
       "color": "#6fcf97",
-      "requireLead": true,
+      "standalone": true,
       "sheet": {
         "classifyHas": ["e-mail", "klient"],
         "date": "datum",
@@ -44,7 +44,7 @@
       "plural": "Zweitgespräche",
       "short": "ZG",
       "color": "#5ad0c0",
-      "requireLead": true,
+      "standalone": true,
       "sheet": {
         "classifyHas": ["e-mail", "closer"],
         "date": "datum",

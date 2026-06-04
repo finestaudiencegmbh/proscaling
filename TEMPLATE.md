@@ -108,9 +108,19 @@ eindeutigen Spalte (`classifyHas`), per E-Mail an den Lead gejoint:
   }
 ]
 ```
-Optionen je Stufe: `"quality": true` (Stufe trägt das Fragebogen-Scoring, dazu
-`"answers": { "income": "…", … }`), `"emailColumns"` (mehrere Mail-Spalten),
-`"leadMarker"` (Spalte in der Lead-Zeile, die die Stufe markiert).
+Optionen je Stufe:
+- `"standalone": true` — die Stufe wird **komplett eigenständig** aus ihrem Tab
+  gezählt (eigenes Datum, eigene UTM, **kein** Abgleich mit der Leadliste). Ideal
+  für einen Sales-Funnel, in dem jede Stufe (Erst-/Zweitgespräch) ihre eigene
+  Tabelle mit eigenen Daten ist. Anzahl, „worüber" (Kampagne/Anzeigengruppe/
+  Creative) und Zeitraum kommen rein aus dem Stufen-Tab.
+- `"quality": true` — Stufe trägt das Fragebogen-Scoring (dazu `"answers": { … }`).
+- `"emailColumns"` (mehrere Mail-Spalten), `"leadMarker"` (Spalte in der Lead-Zeile,
+  die die Stufe markiert) — nur für **gejointe** Stufen (ohne `standalone`).
+
+> **Gejoint vs. standalone:** Ohne `standalone` wird die Stufe per E-Mail an den
+> Lead gehängt (z. B. Ticket mit Qualität, erscheint als Spalte je Lead). Mit
+> `standalone` ist die Stufe eine unabhängige Quelle und erscheint nicht pro Lead.
 
 > Schlüssel sind **normalisiert** (klein, ohne `? : .`, Mehrfach-Leerzeichen
 > zusammengefasst) – genau so, wie der Parser die Kopfzellen vergleicht. Beispiel:

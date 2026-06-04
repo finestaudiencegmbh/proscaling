@@ -89,7 +89,15 @@ export default function App() {
   const ticketStage = stages.find((s) => s.key === 'ticket') || null;
   const verlaufLabel = ticketStage ? ticketStage.plural : null;
   const filtered = useMemo(() => (data ? applyFilters(data.leads, filters) : []), [data, filters]);
-  const kpis = useMemo(() => (data ? computeKpis(filtered, data.overviewByAdset, fb, stages) : null), [data, filtered, fb, stages]);
+  // Eigenständige Funnel-Stufen-Events (EG/ZG): nach eigenem Datum + globalen
+  // Filtern eingegrenzt, KEIN Bezug zu den Leads.
+  const stageRecords = data?.stageRecords || {};
+  const filteredStages = useMemo(() => {
+    const out = {};
+    for (const s of stages) out[s.key] = data ? applyFilters(stageRecords[s.key] || [], filters) : [];
+    return out;
+  }, [data, stageRecords, stages, filters]);
+  const kpis = useMemo(() => (data ? computeKpis(filtered, data.overviewByAdset, fb, stages, filteredStages) : null), [data, filtered, fb, stages, filteredStages]);
   const dist = useMemo(() => (data ? tierDistribution(filtered, tiers) : {}), [data, filtered, tiers]);
   // Stunden-Raster, wenn der gewählte Zeitraum genau EIN Tag ist (0–24 Uhr).
   const hourlyDay = (range.from && range.to && range.from === range.to) ? range.from : null;
@@ -124,13 +132,29 @@ export default function App() {
   const UNATTRIB = '(Paid · nicht zuordenbar)';
   const ORGANIC = '(organisch)';
 
+  // Stufen-Events zusätzlich nach dem Drill-Pfad einschränken (wie drillLeads)
+  const drillStages = useMemo(() => {
+    const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const out = {};
+    for (const s of stages) {
+      out[s.key] = (filteredStages[s.key] || []).filter((ev) =>
+        (!drill.campaign || norm(ev.campaign) === norm(drill.campaign)) &&
+        (!drill.adset || norm(ev.adset) === norm(drill.adset)) &&
+        (!drill.creative || norm(ev.creative) === norm(drill.creative))
+      );
+    }
+    return out;
+  }, [filteredStages, stages, drill]);
+
   // Zwei getrennte Container: bezahlt (Meta) und organisch. Nicht zuordenbare
   // Paid-Leads werden ausgeblendet (verwirren in der Aufschlüsselung).
   const paidRows = useMemo(() => {
     if (!data) return [];
     const leads = drillLeads.filter((l) => l.sourceType === 'paid' && l.campaign !== UNATTRIB);
-    return aggregate(leads, tab, data.overviewByAdset, fb, drill, { stages });
-  }, [data, drillLeads, tab, fb, drill, stages]);
+    const sr = {};
+    for (const s of stages) sr[s.key] = (drillStages[s.key] || []).filter((ev) => ev.sourceType === 'paid' && ev.campaign !== UNATTRIB);
+    return aggregate(leads, tab, data.overviewByAdset, fb, drill, { stages, stageRecords: sr });
+  }, [data, drillLeads, drillStages, tab, fb, drill, stages]);
 
   const organicRows = useMemo(() => {
     if (!data) return [];
@@ -141,12 +165,18 @@ export default function App() {
       ? base.filter((l) => (l.organicCampaign || '(direkt)') === orgDrill)
       : base;
     const dim = orgDrill ? 'organicAdset' : 'organicCampaign';
+    const sr = {};
+    for (const s of stages) {
+      let evs = (filteredStages[s.key] || []).filter((ev) => ev.sourceType !== 'paid');
+      if (orgDrill) evs = evs.filter((ev) => (ev.organicCampaign || '(direkt)') === orgDrill);
+      sr[s.key] = evs.map((ev) => ({ ...ev, organicCampaign: ev.organicCampaign || '(direkt)', organicAdset: ev.organicAdset || '(direkt)' }));
+    }
     const rows = aggregate(
       leads.map((l) => ({ ...l, organicCampaign: l.organicCampaign || '(direkt)', organicAdset: l.organicAdset || '(direkt)' })),
-      dim, data.overviewByAdset, fb, {}, { addFbRows: false, stages }
+      dim, data.overviewByAdset, fb, {}, { addFbRows: false, stages, stageRecords: sr }
     );
     return rows;
-  }, [data, filtered, fb, orgDrill, stages]);
+  }, [data, filtered, filteredStages, fb, orgDrill, stages]);
 
   // Drill-Down: Klick auf eine Zeile zoomt eine Ebene tiefer (lokaler Pfad).
   const DRILL_ORDER = ['campaign', 'adset', 'creative', 'placement'];

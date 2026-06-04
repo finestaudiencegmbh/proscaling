@@ -14,7 +14,9 @@ const BASE_COLS = [
 
 function buildCols(features, stages) {
   const cols = [...BASE_COLS];
-  for (const s of stages) cols.push({ key: `stage_${s.key}`, label: s.short || s.singular, sort: (l) => (l.stages?.[s.key] ? 1 : 0), stage: s });
+  // Nur gejointe Stufen erscheinen pro Lead; eigenständige Stufen (standalone)
+  // werden separat gezählt und haben keinen Lead-Bezug.
+  for (const s of stages.filter((s) => !s.standalone)) cols.push({ key: `stage_${s.key}`, label: s.short || s.singular, sort: (l) => (l.stages?.[s.key] ? 1 : 0), stage: s });
   if (features.hasQuality) cols.push({ key: 'quality', label: 'Qualität', sort: (l) => l.quality?.score ?? -1 });
   return cols;
 }
@@ -98,7 +100,7 @@ export default function LeadsTable({ leads, tiers, features = { hasQuality: true
                   <td className="trunc sec" data-label="Anzeigengruppe" title={l.adset}>{l.adset}</td>
                   <td className="trunc sec" data-label="Creative" title={l.creative}>{l.creative}</td>
                   <td className="trunc sec" data-label="Placement" title={l.placement}>{l.placement}</td>
-                  {stages.map((s) => (
+                  {stages.filter((s) => !s.standalone).map((s) => (
                     <td key={s.key} className="sec" data-label={s.short || s.singular}>{l.stages?.[s.key] ? <span className="pill vip" style={{ color: s.color, borderColor: s.color }}>{s.short || s.singular}</span> : <span className="muted">–</span>}</td>
                   ))}
                   {features.hasQuality && <td data-label="Qualität"><QualityBadge quality={l.quality} tiers={tiers} /></td>}

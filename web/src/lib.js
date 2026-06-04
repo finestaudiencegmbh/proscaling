@@ -115,7 +115,7 @@ function spendForAdsets(adsetNames, overviewByAdset) {
  * Anzeigengruppe aus der Sheet-Übersicht (nur Kampagne/Anzeigengruppe).
  */
 export function aggregate(leads, dimKey, overviewByAdset, fb, filters = {}, opts = {}) {
-  const { addFbRows = true, stages = [] } = opts; // FB-only-Zeilen ergänzen? + Funnel-Stufen
+  const { addFbRows = true, stages = [], stageRecords = {} } = opts; // FB-only-Zeilen ergänzen? + eigenständige Funnel-Stufen-Events
   const fbDim = addFbRows ? (fb?.byDim?.[dimKey] || null) : null;
   // Tickets werden nach ihrer EIGENEN Herkunft (Ticket-UTM) gezählt, nicht nach
   // der Lead-Zeile – sonst landet ein Ticket in jeder Kampagne, in der die Person
@@ -138,12 +138,10 @@ export function aggregate(leads, dimKey, overviewByAdset, fb, filters = {}, opts
     const tk = (tDimKey && l[tDimKey]) ? l[tDimKey] : (l[dimKey] || '(unbekannt)');
     ensure(tk).tickets.push(l);
   }
-  // Funnel-Stufen (z. B. EG, ZG): je Stufe nach stufen-eigener Herkunft zählen.
+  // Funnel-Stufen (z. B. EG, ZG): eigenständige Events je Stufe & Dimension zählen.
   for (const s of stages) {
-    for (const l of leads) {
-      const hit = l.stages?.[s.key];
-      if (!hit) continue;
-      const gk = (stageDim ? hit[stageDim] : l[dimKey]) || '(unbekannt)';
+    for (const ev of (stageRecords[s.key] || [])) {
+      const gk = (stageDim ? ev[stageDim] : ev[dimKey]) || '(unbekannt)';
       const g = ensure(gk);
       g.stageCounts[s.key] = (g.stageCounts[s.key] || 0) + 1;
     }
@@ -238,7 +236,7 @@ function makeRow({ key, total, tickets, avgQuality, qualified, spend, impression
   };
 }
 
-export function computeKpis(leads, overviewByAdset, fb, stageDefs = []) {
+export function computeKpis(leads, overviewByAdset, fb, stageDefs = [], stageRecords = {}) {
   const total = leads.length;
   const paid = leads.filter((l) => l.sourceType === 'paid');
   const organic = leads.filter((l) => l.sourceType !== 'paid');
@@ -267,7 +265,7 @@ export function computeKpis(leads, overviewByAdset, fb, stageDefs = []) {
   // Funnel-Stufen (z. B. EG, ZG) gesamt: Anzahl, Kosten/Stufe (auf Lead-Spend),
   // CVR von der Vorstufe (erste Stufe relativ zu den Leads gesamt).
   const stageCounts = {};
-  for (const s of stageDefs) stageCounts[s.key] = leads.filter((l) => l.stages?.[s.key]).length;
+  for (const s of stageDefs) stageCounts[s.key] = (stageRecords[s.key] || []).length;
   const stages = stageStats(stageCounts, stageDefs, total, leadSpend);
   return {
     total,
