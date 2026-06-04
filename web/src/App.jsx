@@ -25,6 +25,19 @@ const EMPTY_FILTERS = {
   income: '', realEstate: '', employment: '', from: '', to: '', onlyTickets: false, tiers: [],
 };
 
+const DEFAULT_FEATURES = { hasTickets: true, hasQuality: true };
+
+/** Markenzeichen: Logo (falls in der Config gesetzt) oder Kürzel in Akzentfarbe. */
+function BrandMark({ branding, size = 40, className = 'brand-logo' }) {
+  if (branding?.logo) return <img className={className} src={branding.logo} alt="" width={size} height={size} />;
+  const initials = (branding?.initials || '').slice(0, 3);
+  return (
+    <span className={`${className} brand-initials`} style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }} aria-hidden="true">
+      {initials}
+    </span>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -48,6 +61,16 @@ export default function App() {
 
   useEffect(() => { load(false); }, []);
 
+  // Branding (Akzent-/Markenfarbe) aus der Projekt-Config in die CSS-Variablen
+  // übernehmen – damit kaskadieren alle abgeleiteten Töne (color-mix in styles.css).
+  useEffect(() => {
+    const b = data?.project?.branding;
+    if (!b) return;
+    const root = document.documentElement;
+    if (b.accent) root.style.setProperty('--accent', b.accent);
+    if (b.primary) root.style.setProperty('--primary', b.primary);
+  }, [data?.project?.branding?.accent, data?.project?.branding?.primary]);
+
   const applyRange = (r) => {
     setRange(r);
     // Zeitraum steuert Server (FB) UND die clientseitige Lead-Filterung
@@ -58,6 +81,10 @@ export default function App() {
   const tiers = data?.scoring?.tiers || [];
   const fb = data?.fb || null;
   const hasFb = Boolean(fb?.byDim);
+  const project = data?.project || null;
+  const features = project?.features || DEFAULT_FEATURES;
+  const accent = project?.branding?.accent || '#d0bb5a';
+  const ticketLabel = features.hasTickets ? (project?.labels?.ticketPlural || 'Tickets') : null;
   const filtered = useMemo(() => (data ? applyFilters(data.leads, filters) : []), [data, filters]);
   const kpis = useMemo(() => (data ? computeKpis(filtered, data.overviewByAdset, fb) : null), [data, filtered, fb]);
   const dist = useMemo(() => (data ? tierDistribution(filtered, tiers) : {}), [data, filtered, tiers]);
@@ -66,6 +93,13 @@ export default function App() {
   const leadDaily = useMemo(() => (data ? leadsByTime(filtered, hourlyDay) : []), [data, filtered, hourlyDay]);
   const cplDaily = useMemo(() => ((hasFb && fb.daily) ? cplByDay(fb.daily.spend, filtered) : []), [hasFb, fb, filtered]);
   const qualityDaily = useMemo(() => (data ? qualityByDay(filtered) : []), [data, filtered]);
+
+  // Verlaufs-Serien: Leads immer, Ticket-Stufe nur wenn aktiviert.
+  const verlaufSeries = useMemo(() => {
+    const s = [{ key: 'leads', label: 'Leads', color: '#5ec8d8', data: leadDaily.map((d) => ({ date: d.date, value: d.leads })) }];
+    if (features.hasTickets) s.push({ key: 'tickets', label: ticketLabel, color: '#6fcf97', data: leadDaily.map((d) => ({ date: d.date, value: d.tickets })) });
+    return s;
+  }, [leadDaily, features.hasTickets, ticketLabel]);
 
   // Drill-Pfad NUR für "Performance nach Ebene" – getrennt von den globalen
   // Filtern. Klick = reinzoomen, ohne dauerhaften globalen Filter zu setzen.
@@ -125,10 +159,10 @@ export default function App() {
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
-          <img className="brand-logo" src="/logo.svg" alt="MoneyMaker" width="40" height="40" />
+          <BrandMark branding={project?.branding} size={40} className="brand-logo" />
           <div className="brand-text">
-            <div className="brand-title">MoneyMaker</div>
-            <div className="brand-sub">Workshop · 15.–18.06.</div>
+            <div className="brand-title">{project?.name || 'Dashboard'}</div>
+            {project?.subtitle && <div className="brand-sub">{project.subtitle}</div>}
           </div>
         </div>
         <nav className="nav">
@@ -147,10 +181,10 @@ export default function App() {
       <main className="content">
         <header className="topbar">
           <div className="topbar-title">
-            <img className="topbar-logo" src="/logo.svg" alt="" width="34" height="34" />
+            <BrandMark branding={project?.branding} size={34} className="topbar-logo" />
             <div>
               <h1>{NAV.find((n) => n.key === view)?.label}</h1>
-              <p className="subtitle">Lead- &amp; VIP-Ticket-Dashboard</p>
+              <p className="subtitle">{project?.subtitle || 'Lead- & Kampagnen-Dashboard'}</p>
             </div>
             <div className="topbar-badges">
               {data?.source === 'demo' && <span className="demo-badge" title="Es werden synthetische Beispieldaten angezeigt.">DEMO</span>}
@@ -185,33 +219,27 @@ export default function App() {
 
         {data && (
           <>
-            <Filters leads={data.leads} filters={filters} setFilters={setFilters} tiers={tiers} onReset={() => setFilters({ ...EMPTY_FILTERS, from: range.from, to: range.to })} />
+            <Filters leads={data.leads} filters={filters} setFilters={setFilters} tiers={tiers} features={features} onReset={() => setFilters({ ...EMPTY_FILTERS, from: range.from, to: range.to })} />
 
             {view === 'dashboard' && (
               <>
                 {/* Graphen oben: Leads & Tickets breit, darunter Spend + CPL nebeneinander */}
                 <section className="panel">
-                  <div className="panel-head"><div><h2>Verlauf</h2><span className="panel-sub">{hourlyDay ? 'Leads/Tickets im Tagesverlauf (0–24 Uhr, minutengenau) · Maus zum Anzeigen' : 'Leads/Tickets (Sheet) & Ad-Spend/CPL (Facebook) pro Tag · Maus zum Anzeigen'}</span></div></div>
+                  <div className="panel-head"><div><h2>Verlauf</h2><span className="panel-sub">{hourlyDay ? `${ticketLabel ? `Leads/${ticketLabel}` : 'Leads'} im Tagesverlauf (0–24 Uhr, minutengenau) · Maus zum Anzeigen` : `${ticketLabel ? `Leads/${ticketLabel}` : 'Leads'} (Sheet) & Ad-Spend/CPL (Facebook) pro Tag · Maus zum Anzeigen`}</span></div></div>
                   <div className="charts-stack">
                     {hourlyDay ? (
                       <>
-                        <IntradayChart title="Leads & Tickets im Tagesverlauf" formatY={(v) => fmtInt(Math.round(v))}
-                          series={[
-                            { key: 'leads', label: 'Leads', color: '#5ec8d8', data: leadDaily.map((d) => ({ date: d.date, value: d.leads })) },
-                            { key: 'tickets', label: 'VIP-Tickets', color: '#6fcf97', data: leadDaily.map((d) => ({ date: d.date, value: d.tickets })) },
-                          ]} />
-                        <div className="info-note">Ad-Spend &amp; CPL sind aktuell nur pro Tag verfügbar – die Stundenwerte dafür folgen. Leads, Tickets &amp; Lead-Qualität siehst du oben minutengenau.</div>
+                        <IntradayChart title={ticketLabel ? `Leads & ${ticketLabel} im Tagesverlauf` : 'Leads im Tagesverlauf'} formatY={(v) => fmtInt(Math.round(v))}
+                          series={verlaufSeries} />
+                        <div className="info-note">Ad-Spend &amp; CPL sind aktuell nur pro Tag verfügbar – die Stundenwerte dafür folgen. {ticketLabel ? `Leads, ${ticketLabel}` : 'Leads'}{features.hasQuality ? ' & Lead-Qualität' : ''} siehst du oben minutengenau.</div>
                       </>
                     ) : (
                       <>
-                        <TimeChart title="Leads & Tickets pro Tag" formatY={(v) => fmtInt(Math.round(v))}
-                          series={[
-                            { key: 'leads', label: 'Leads', color: '#5ec8d8', data: leadDaily.map((d) => ({ date: d.date, value: d.leads })) },
-                            { key: 'tickets', label: 'VIP-Tickets', color: '#6fcf97', data: leadDaily.map((d) => ({ date: d.date, value: d.tickets })) },
-                          ]} />
+                        <TimeChart title={ticketLabel ? `Leads & ${ticketLabel} pro Tag` : 'Leads pro Tag'} formatY={(v) => fmtInt(Math.round(v))}
+                          series={verlaufSeries} />
                         <div className="charts-grid">
                           <TimeChart title="Ad-Spend pro Tag" formatY={(v) => fmtEur(Math.round(v))}
-                            series={[{ key: 'spend', label: 'Ad-Spend', color: '#d0bb5a', data: (hasFb && fb.daily ? fb.daily.spend : []).map((d) => ({ date: d.date, value: d.spend })) }]} />
+                            series={[{ key: 'spend', label: 'Ad-Spend', color: accent, data: (hasFb && fb.daily ? fb.daily.spend : []).map((d) => ({ date: d.date, value: d.spend })) }]} />
                           <TimeChart title="CPL pro Tag" formatY={(v) => fmtEur(Math.round(v))}
                             series={[{ key: 'cpl', label: 'CPL (Ads)', color: '#a78bfa', data: cplDaily.map((d) => ({ date: d.date, value: d.value })) }]} />
                         </div>
@@ -221,7 +249,7 @@ export default function App() {
                 </section>
 
                 {/* KPI-Boxen darunter */}
-                <Kpis kpis={kpis} dist={dist} tiers={tiers} qualityDaily={qualityDaily} />
+                <Kpis kpis={kpis} dist={dist} tiers={tiers} qualityDaily={qualityDaily} features={features} accent={accent} labels={project?.labels} />
 
                 <section className="panel">
                   <div className="panel-head"><div><h2>Bezahlt · Meta</h2><span className="panel-sub">Performance nach Kampagne, Anzeigengruppe, Creative und Placement</span></div></div>
@@ -248,7 +276,7 @@ export default function App() {
                   {!hasFb && (tab === 'creative' || tab === 'placement') && (
                     <div className="info-note">Adspend ist je Anzeigengruppe im Sheet hinterlegt – auf Creative-/Placement-Ebene über die Facebook-Anbindung.</div>
                   )}
-                  <BreakdownTable rows={paidRows} dimLabel={DIMENSIONS.find((d) => d.key === tab).label} onSelect={selectDim} tiers={tiers} />
+                  <BreakdownTable rows={paidRows} dimLabel={DIMENSIONS.find((d) => d.key === tab).label} onSelect={selectDim} tiers={tiers} features={features} labels={project?.labels} />
                 </section>
 
                 {organicRows.length > 0 && (
@@ -262,7 +290,7 @@ export default function App() {
                         </span>
                       </div>
                     )}
-                    <BreakdownTable rows={organicRows} dimLabel={orgDrill ? 'Unterquelle' : 'Quelle'} onSelect={orgDrill ? undefined : (k) => setOrgDrill(k)} tiers={tiers} showActiveToggle={false} />
+                    <BreakdownTable rows={organicRows} dimLabel={orgDrill ? 'Unterquelle' : 'Quelle'} onSelect={orgDrill ? undefined : (k) => setOrgDrill(k)} tiers={tiers} features={features} labels={project?.labels} showActiveToggle={false} />
                   </section>
                 )}
               </>
@@ -272,7 +300,7 @@ export default function App() {
               hasFb && fb.hierarchy ? (
                 <section className="panel">
                   <div className="panel-head"><div><h2>Kampagnen-Aufschlüsselung</h2><span className="panel-sub">Kampagne → Anzeigengruppe → Creative · Facebook-Kennzahlen + Lead-Attribution</span></div></div>
-                  <CampaignCards hierarchy={fb.hierarchy} dailyByEntity={fb.dailyByEntity} intradayByEntity={fb.intradayByEntity} intradayDay={fb.intradayDay} accounts={fb.accounts} />
+                  <CampaignCards hierarchy={fb.hierarchy} dailyByEntity={fb.dailyByEntity} intradayByEntity={fb.intradayByEntity} intradayDay={fb.intradayDay} accounts={fb.accounts} features={features} accent={accent} labels={project?.labels} />
                 </section>
               ) : (
                 <section className="panel">
@@ -285,14 +313,16 @@ export default function App() {
             {view === 'leads' && (
               <section className="panel">
                 <div className="panel-head"><div><h2>Alle Leads</h2><span className="panel-sub">Zeile anklicken für Details &amp; Fragebogen-Antworten</span></div></div>
-                <LeadsTable leads={filtered} tiers={tiers} />
+                <LeadsTable leads={filtered} tiers={tiers} features={features} labels={project?.labels} />
               </section>
             )}
 
             {view === 'sources' && <SourcesView leads={filtered} />}
 
             <footer className="footer">
-              {data.counts.leads} Leads · {data.counts.paidLeads} bezahlt · {data.counts.tickets} VIP-Tickets · {data.counts.scored} bewertet
+              {data.counts.leads} Leads · {data.counts.paidLeads} bezahlt
+              {features.hasTickets && ` · ${data.counts.tickets} ${ticketLabel}`}
+              {features.hasQuality && ` · ${data.counts.scored} bewertet`}
               {' · '}Quelle: {data.source === 'google' ? 'Google Sheet (live)' : 'Demo'}
             </footer>
           </>

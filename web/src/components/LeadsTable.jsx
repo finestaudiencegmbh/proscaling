@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { fmtDate } from '../lib.js';
 import QualityBadge from './QualityBadge.jsx';
 
-const COLS = [
+const BASE_COLS = [
   { key: 'name', label: 'Name', sort: (l) => l.name },
   { key: 'wonAt', label: 'Lead am', sort: (l) => l.wonAt || '' },
   { key: 'sourceType', label: 'Quelle', sort: (l) => l.sourceType },
@@ -10,27 +10,39 @@ const COLS = [
   { key: 'adset', label: 'Anzeigengruppe', sort: (l) => l.adset },
   { key: 'creative', label: 'Creative', sort: (l) => l.creative },
   { key: 'placement', label: 'Placement', sort: (l) => l.placement },
-  { key: 'ticket', label: 'VIP', sort: (l) => (l.hasTicket ? 1 : 0) },
-  { key: 'quality', label: 'Qualität', sort: (l) => l.quality?.score ?? -1 },
 ];
 
-function exportCsv(leads) {
-  const head = ['Name', 'E-Mail', 'Telefon', 'Lead am', 'VIP am', 'Quelle', 'Kampagne', 'Anzeigengruppe', 'Creative', 'Placement', 'Quality-Score', 'Tier', 'Einkommen', 'Beschäftigung', 'Immobilien', 'Investiert', 'Beziehungsstand'];
+function buildCols(features, ticketSg) {
+  const cols = [...BASE_COLS];
+  if (features.hasTickets) cols.push({ key: 'ticket', label: ticketSg, sort: (l) => (l.hasTicket ? 1 : 0) });
+  if (features.hasQuality) cols.push({ key: 'quality', label: 'Qualität', sort: (l) => l.quality?.score ?? -1 });
+  return cols;
+}
+
+function exportCsv(leads, features, ticketSg) {
+  const head = ['Name', 'E-Mail', 'Telefon', 'Lead am', 'Quelle', 'Kampagne', 'Anzeigengruppe', 'Creative', 'Placement'];
+  if (features.hasTickets) head.push(`${ticketSg} am`);
+  if (features.hasQuality) head.push('Quality-Score', 'Tier', 'Einkommen', 'Beschäftigung', 'Immobilien', 'Investiert', 'Beziehungsstand');
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const lines = leads.map((l) =>
-    [l.name, l.email, l.phone, l.wonAt, l.ticketAt, l.sourceType, l.campaign, l.adset, l.creative, l.placement, l.quality?.score ?? '', l.quality?.tier ?? '', l.answers?.income, l.answers?.employment, l.answers?.realEstate, l.answers?.invested, l.answers?.relationship].map(esc).join(';')
-  );
+  const lines = leads.map((l) => {
+    const row = [l.name, l.email, l.phone, l.wonAt, l.sourceType, l.campaign, l.adset, l.creative, l.placement];
+    if (features.hasTickets) row.push(l.ticketAt);
+    if (features.hasQuality) row.push(l.quality?.score ?? '', l.quality?.tier ?? '', l.answers?.income, l.answers?.employment, l.answers?.realEstate, l.answers?.invested, l.answers?.relationship);
+    return row.map(esc).join(';');
+  });
   const csv = [head.map(esc).join(';'), ...lines].join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `mmv-leads-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-export default function LeadsTable({ leads, tiers }) {
+export default function LeadsTable({ leads, tiers, features = { hasTickets: true, hasQuality: true }, labels = {} }) {
+  const ticketSg = labels.ticketSingular || 'VIP';
+  const COLS = useMemo(() => buildCols(features, ticketSg), [features.hasTickets, features.hasQuality, ticketSg]);
   const [sort, setSort] = useState({ col: 'wonAt', dir: 'desc' });
   const [open, setOpen] = useState(null);
 
@@ -51,7 +63,7 @@ export default function LeadsTable({ leads, tiers }) {
     <div>
       <div className="table-toolbar">
         <span>{leads.length} Leads</span>
-        <button className="ghost-btn" onClick={() => exportCsv(sorted)}>
+        <button className="ghost-btn" onClick={() => exportCsv(sorted, features, ticketSg)}>
           <svg className="btn-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <path d="M7 10l5 5 5-5" />
@@ -87,10 +99,10 @@ export default function LeadsTable({ leads, tiers }) {
                   <td className="trunc sec" data-label="Anzeigengruppe" title={l.adset}>{l.adset}</td>
                   <td className="trunc sec" data-label="Creative" title={l.creative}>{l.creative}</td>
                   <td className="trunc sec" data-label="Placement" title={l.placement}>{l.placement}</td>
-                  <td className="sec" data-label="VIP">{l.hasTicket ? <span className="pill vip">VIP</span> : <span className="muted">–</span>}</td>
-                  <td data-label="Qualität"><QualityBadge quality={l.quality} tiers={tiers} /></td>
+                  {features.hasTickets && <td className="sec" data-label={ticketSg}>{l.hasTicket ? <span className="pill vip">{ticketSg}</span> : <span className="muted">–</span>}</td>}
+                  {features.hasQuality && <td data-label="Qualität"><QualityBadge quality={l.quality} tiers={tiers} /></td>}
                 </tr>
-                {open === l.email + i && l.answers && (
+                {open === l.email + i && features.hasQuality && l.answers && (
                   <tr className="detail-row">
                     <td colSpan={COLS.length}>
                       <div className="answers">

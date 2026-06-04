@@ -1,0 +1,28 @@
+{
+  "_comment": "Zentrale Projekt-Konfiguration. Hier wird das Dashboard pro Projekt angepasst – ohne Code. Nach Änderungen den Server neu starten (bzw. neu deployen). Felder, die hier fehlen, fallen auf die Defaults in server/config.js zurück. Onboarding-Anleitung: siehe TEMPLATE.md.",
+
+  "name": "ProScaling GmbH",
+  "subtitle": "Lead- & Kampagnen-Dashboard",
+
+  "_comment_branding": "primary = Markenfarbe (dunkler Hintergrund), accent = Akzent-/Highlight-Farbe (Buttons, KPI-Akzente, Graphen). logo = Pfad zu einem Logo in web/public (z. B. /logo.svg) ODER null, dann wird das Kürzel angezeigt. initials = Kürzel, das ohne Logo als Markenzeichen erscheint.",
+  "branding": {
+    "primary": "#000000",
+    "accent": "#cba851",
+    "logo": null,
+    "initials": "PS"
+  },
+
+  "_comment_features": "hasTickets = Ticket-/zweite-Stufe-System (VIP o. ä.). hasQuality = Fragebogen-basiertes Lead-Qualitäts-Scoring. Bei false verschwinden alle zugehörigen KPIs, Spalten und Filter sauber aus dem Dashboard.",
+  "features": {
+    "hasTickets": false,
+    "hasQuality": false
+  },
+
+  "_comment_labels": "Beschriftung der Ticket-Stufe (nur relevant, wenn hasTickets = true).",
+  "labels": {
+    "ticketSingular": "Ticket",
+    "ticketPlural": "Tickets"
+  }
+
+  ,"_comment_questionnaire": "Spalten-Mapping des Sheets (nur nötig, wenn hasTickets/hasQuality = true). Die Defaults in server/config.js passen zum MoneyMaker-Sheet (deutsche Fragebogen-Spalten). Für ein Projekt mit eigenem Fragebogen hier ein 'questionnaire'-Objekt ergänzen (siehe TEMPLATE.md)."
+}

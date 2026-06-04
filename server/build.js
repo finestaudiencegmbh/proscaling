@@ -1,5 +1,6 @@
 import { computeQuality } from './scoring.js';
 import { loadCampaignConfig } from './campaigns.js';
+import { DEFAULTS } from './config.js';
 
 const collapse = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
@@ -74,7 +75,9 @@ function isPaid(utm, paidAdsets, patterns) {
  * Führt Leads, VIP-Tickets und Adspend-Übersicht zu einem einheitlichen
  * Datensatz zusammen. Join über die E-Mail-Adresse.
  */
-export function buildDataset({ leads, tickets, overview }, cfg) {
+export function buildDataset({ leads, tickets, overview }, cfg, project = DEFAULTS) {
+  const hasTickets = project.features.hasTickets;
+  const hasQuality = project.features.hasQuality;
   const warnings = [];
   const paidAdsets = new Set(overview.map((o) => o.adset.toLowerCase()));
   const campCfg = loadCampaignConfig();
@@ -99,9 +102,11 @@ export function buildDataset({ leads, tickets, overview }, cfg) {
   // Antworten/Qualität aus dem VIP-Tab nach E-Mail indizieren (zum Anreichern
   // der Lead-Zeilen; verändert NICHT die Lead-Anzahl).
   const ticketByEmail = new Map();
-  for (const t of tickets) {
-    for (const e of [t.email, t.emailTypeform]) {
-      if (e && !ticketByEmail.has(e)) ticketByEmail.set(e, t);
+  if (hasTickets) {
+    for (const t of tickets) {
+      for (const e of [t.email, t.emailTypeform]) {
+        if (e && !ticketByEmail.has(e)) ticketByEmail.set(e, t);
+      }
     }
   }
 
@@ -121,7 +126,7 @@ export function buildDataset({ leads, tickets, overview }, cfg) {
     const t = email ? ticketByEmail.get(email) : null;
     // Kanonische Ticket-Identität (für die Einmal-Wertung)
     const identity = t?.email || email;
-    const isCandidate = Boolean(t) || Boolean(l.ticketAt);
+    const isCandidate = hasTickets && (Boolean(t) || Boolean(l.ticketAt));
     let isTicketRow = false;
     if (isCandidate) {
       if (!identity) {
@@ -152,7 +157,7 @@ export function buildDataset({ leads, tickets, overview }, cfg) {
 
   // 2) VIP-Tickets, deren E-Mail in KEINER Lead-Zeile vorkommt, als eigene
   //    Datensätze ergänzen (z. B. nur im VIP-Tab erfasste Personen).
-  for (const t of tickets) {
+  for (const t of (hasTickets ? tickets : [])) {
     // mit einer Lead-Zeile verknüpft? (beide Mail-Varianten prüfen)
     if ((t.email && seenLeadEmails.has(t.email)) || (t.emailTypeform && seenLeadEmails.has(t.emailTypeform))) continue;
     const identity = t.email || t.emailTypeform || '';
@@ -180,7 +185,7 @@ export function buildDataset({ leads, tickets, overview }, cfg) {
     const ld = dimsFor(r.utm);
     const paid = ld.paid;
     const { campaign, adset, creative } = ld;
-    const quality = r.hasTicket ? computeQuality(r.answers, cfg) : null;
+    const quality = (hasQuality && r.hasTicket) ? computeQuality(r.answers, cfg) : null;
 
     // Ticket-Dimensionen aus der TICKET-EIGENEN UTM (damit ein Ticket dort zählt,
     // wo es wirklich entstand – nicht in jeder Kampagne, in der die Person Lead war)

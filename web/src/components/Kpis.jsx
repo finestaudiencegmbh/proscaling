@@ -13,11 +13,13 @@ function Card({ label, value, sub, accent }) {
   );
 }
 
-const GOLD = '#d0bb5a';
 const CYAN = '#5ec8d8';
 const GREEN = '#6fcf97';
 
-export default function Kpis({ kpis, dist, tiers, qualityDaily = [] }) {
+export default function Kpis({ kpis, dist, tiers, qualityDaily = [], features = { hasTickets: true, hasQuality: true }, accent = '#d0bb5a', labels = {} }) {
+  const GOLD = accent;
+  const ticketSg = labels.ticketSingular || 'Ticket';
+  const ticketPl = labels.ticketPlural || 'Tickets';
   return (
     <div className="kpi-sections">
       {/* Bezahlt (Facebook Ads) */}
@@ -27,8 +29,8 @@ export default function Kpis({ kpis, dist, tiers, qualityDaily = [] }) {
           <Card label="Adspend" value={fmtEur(kpis.spend)} sub={kpis.nonLeadSpend > 0 ? `davon ${fmtEur(kpis.nonLeadSpend)} Traffic` : 'gesamt'} accent={GOLD} />
           <Card label="Bezahlte Leads" value={fmtInt(kpis.paid)} sub="über Ads" accent={GOLD} />
           <Card label="CPL" value={fmtEur(kpis.cpl)} sub={kpis.nonLeadSpend > 0 ? 'nur Lead-Kampagnen' : 'pro bezahltem Lead'} accent={GOLD} />
-          <Card label="VIP-Tickets (Paid)" value={fmtInt(kpis.paidTickets)} sub={`Rate ${fmtPct(kpis.paidTicketRate)}`} accent={GOLD} />
-          <Card label="Kosten / Ticket" value={fmtEur(kpis.cpt)} sub="pro bezahltem Ticket" accent={GOLD} />
+          {features.hasTickets && <Card label={`${ticketPl} (Paid)`} value={fmtInt(kpis.paidTickets)} sub={`Rate ${fmtPct(kpis.paidTicketRate)}`} accent={GOLD} />}
+          {features.hasTickets && <Card label={`Kosten / ${ticketSg}`} value={fmtEur(kpis.cpt)} sub={`pro bezahltem ${ticketSg}`} accent={GOLD} />}
         </div>
       </section>
 
@@ -37,12 +39,13 @@ export default function Kpis({ kpis, dist, tiers, qualityDaily = [] }) {
         <div className="kpi-section-head"><span className="kpi-dot" style={{ background: CYAN }} />Organisch</div>
         <div className="kpi-grid">
           <Card label="Organische Leads" value={fmtInt(kpis.organic)} sub="ohne Ad-Kosten" accent={CYAN} />
-          <Card label="VIP-Tickets (Organisch)" value={fmtInt(kpis.organicTickets)} sub={`Rate ${fmtPct(kpis.organicTicketRate)}`} accent={CYAN} />
+          {features.hasTickets && <Card label={`${ticketPl} (Organisch)`} value={fmtInt(kpis.organicTickets)} sub={`Rate ${fmtPct(kpis.organicTicketRate)}`} accent={CYAN} />}
           <Card label="Leads gesamt" value={fmtInt(kpis.total)} sub={`${fmtInt(kpis.paid)} bezahlt · ${fmtInt(kpis.organic)} organisch`} accent={CYAN} />
         </div>
       </section>
 
       {/* Lead-Qualität (quellenübergreifend) */}
+      {features.hasQuality && (
       <section className="kpi-section">
         <div className="kpi-section-head"><span className="kpi-dot" style={{ background: GREEN }} />Lead-Qualität</div>
         <div className="kpi-grid">
@@ -78,6 +81,7 @@ export default function Kpis({ kpis, dist, tiers, qualityDaily = [] }) {
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }

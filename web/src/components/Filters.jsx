@@ -15,7 +15,7 @@ function Select({ label, value, onChange, options, allLabel = 'Alle' }) {
   );
 }
 
-export default function Filters({ leads, filters, setFilters, tiers, onReset }) {
+export default function Filters({ leads, filters, setFilters, tiers, features = { hasTickets: true, hasQuality: true }, onReset }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const set = (patch) => setFilters((f) => ({ ...f, ...patch }));
   const toggleTier = (key) => {
@@ -59,21 +59,25 @@ export default function Filters({ leads, filters, setFilters, tiers, onReset }) 
             <Select label="Placement" value={filters.placement} onChange={(v) => set({ placement: v })} options={uniqueValues(leads, 'placement')} />
           </div>
 
-          <div className="filters-row">
-            <Select label="Einkommen" value={filters.income} onChange={(v) => set({ income: v })} options={answerValues(leads, 'income')} />
-            <Select label="Immobilien" value={filters.realEstate} onChange={(v) => set({ realEstate: v })} options={answerValues(leads, 'realEstate')} />
-            <Select label="Beschäftigung" value={filters.employment} onChange={(v) => set({ employment: v })} options={answerValues(leads, 'employment')} />
-          </div>
+          {features.hasQuality && (
+            <div className="filters-row">
+              <Select label="Einkommen" value={filters.income} onChange={(v) => set({ income: v })} options={answerValues(leads, 'income')} />
+              <Select label="Immobilien" value={filters.realEstate} onChange={(v) => set({ realEstate: v })} options={answerValues(leads, 'realEstate')} />
+              <Select label="Beschäftigung" value={filters.employment} onChange={(v) => set({ employment: v })} options={answerValues(leads, 'employment')} />
+            </div>
+          )}
 
-          <div className="filters-row tier-row">
-            <span className="tier-label">Qualität:</span>
-            {tiers.map((t) => (
-              <button key={t.key} className={`tier-chip ${filters.tiers.includes(t.key) ? 'active' : ''}`} style={filters.tiers.includes(t.key) ? { background: t.color, borderColor: t.color } : { borderColor: t.color, color: t.color }} onClick={() => toggleTier(t.key)}>
-                {t.label}
-              </button>
-            ))}
-            <button className={`tier-chip ${filters.tiers.includes('none') ? 'active' : ''}`} onClick={() => toggleTier('none')}>ohne Score</button>
-          </div>
+          {features.hasQuality && (
+            <div className="filters-row tier-row">
+              <span className="tier-label">Qualität:</span>
+              {tiers.map((t) => (
+                <button key={t.key} className={`tier-chip ${filters.tiers.includes(t.key) ? 'active' : ''}`} style={filters.tiers.includes(t.key) ? { background: t.color, borderColor: t.color } : { borderColor: t.color, color: t.color }} onClick={() => toggleTier(t.key)}>
+                  {t.label}
+                </button>
+              ))}
+              <button className={`tier-chip ${filters.tiers.includes('none') ? 'active' : ''}`} onClick={() => toggleTier('none')}>ohne Score</button>
+            </div>
+          )}
         </div>
       )}
     </div>

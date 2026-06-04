@@ -6,6 +6,8 @@
  * Dadurch bleibt er stabil, auch wenn Tabs umbenannt oder verschoben werden.
  */
 
+import { DEFAULTS } from './config.js';
+
 const norm = (s) =>
   String(s ?? '')
     .replace(/ /g, ' ')
@@ -18,17 +20,23 @@ const key = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-/** Erkennt anhand einer Kopfzeile, um welchen Tabellentyp es sich handelt. */
-function classifyHeader(cells) {
+/**
+ * Erkennt anhand einer Kopfzeile, um welchen Tabellentyp es sich handelt.
+ * Die Erkennungs-Spalten kommen aus der Projekt-Config (questionnaire.classify).
+ * Ticket-Tabellen werden nur erkannt, wenn das Projekt Tickets ODER Qualität
+ * nutzt – sonst gibt es keinen Fragebogen.
+ */
+function classifyHeader(cells, q, features) {
   const set = new Set(cells.map(key));
-  const has = (...keys) => keys.every((k) => set.has(k));
-  const some = (...keys) => keys.some((k) => set.has(k));
+  const has = (keys) => keys.every((k) => set.has(k));
+  const some = (keys) => keys.some((k) => set.has(k));
+  const c = q.classify;
 
-  if (has('anzeigengruppe', 'adspend')) return 'overview';
-  if (some('monatliches einkommen', 'immobilien im besitz') || has('teilgenommen am', 'vorname')) {
+  if (has(c.overviewHas)) return 'overview';
+  if ((features.hasTickets || features.hasQuality) && (some(c.ticketsSome) || has(c.ticketsHas))) {
     return 'tickets';
   }
-  if (has('gewonnen am') && some('utm_source', 'e-mail')) return 'leads';
+  if (has(c.leadsHas) && some(c.leadsSome)) return 'leads';
   return null;
 }
 
@@ -64,7 +72,7 @@ const normEmail = (s) => norm(s).toLowerCase();
  * untereinander gestapelte Tabellen enthalten (z. B. die Anzeigengruppen-
  * Übersicht mit mehreren Kampagnen).
  */
-function* iterateTables(rows) {
+function* iterateTables(rows, q, features) {
   let header = null;
   let type = null;
   let body = [];
@@ -73,7 +81,7 @@ function* iterateTables(rows) {
     return null;
   };
   for (const row of rows) {
-    const t = classifyHeader(row.map(norm).filter(Boolean).length >= 2 ? row : []);
+    const t = classifyHeader(row.map(norm).filter(Boolean).length >= 2 ? row : [], q, features);
     if (t) {
       const prev = flush();
       if (prev) yield prev;
@@ -125,49 +133,45 @@ function parseOverviewRow(o) {
   };
 }
 
-function parseLeadRow(o) {
-  const wonAt = parseDate(o['gewonnen am']);
+function parseLeadRow(o, q) {
+  const L = q.lead;
+  const wonAt = parseDate(o[L.wonAt]);
   if (!wonAt) return null; // Zähl-/Summenzeilen ohne gültiges Datum überspringen
   return {
     wonAt,
-    firstName: norm(o['vorname']),
-    lastName: norm(o['nachname']),
-    email: normEmail(o['e-mail']),
+    firstName: norm(o[L.firstName]),
+    lastName: norm(o[L.lastName]),
+    email: normEmail(o[L.email]),
     utm: {
-      source: norm(o['utm_source']),
-      medium: norm(o['utm_medium']),
-      campaign: norm(o['utm_campaign']),
-      term: norm(o['utm_term']),
+      source: norm(o[L.utmSource]),
+      medium: norm(o[L.utmMedium]),
+      campaign: norm(o[L.utmCampaign]),
+      term: norm(o[L.utmTerm]),
     },
-    ticketAt: parseDate(o['vip-ticket geholt am']),
+    ticketAt: parseDate(o[L.ticketDate]),
   };
 }
 
-function parseTicketRow(o) {
-  const at = parseDate(o['teilgenommen am']);
-  const email = normEmail(o['e-mail (funnelcockpit)'] || o['e-mail (typeform)'] || o['e-mail']);
+function parseTicketRow(o, q) {
+  const T = q.ticket;
+  const at = parseDate(o[T.date]);
+  const email = normEmail(T.emailColumns.map((c) => o[c]).find(Boolean));
   if (!at && !email) return null;
+  const answers = {};
+  for (const [field, col] of Object.entries(q.answers)) answers[field] = norm(o[col]);
   return {
     at,
-    firstName: norm(o['vorname']),
-    lastName: norm(o['nachname']),
+    firstName: norm(o[T.firstName]),
+    lastName: norm(o[T.lastName]),
     email,
-    emailTypeform: normEmail(o['e-mail (typeform)']),
-    phone: norm(o['handynummer']),
-    answers: {
-      employment: norm(o['angestellt selbstständig oder unternehmer']),
-      challenge: norm(o['größte herausforderung im vermögensaufbau']),
-      income: norm(o['monatliches einkommen']),
-      realEstate: norm(o['immobilien im besitz']),
-      invested: norm(o['geld investiert in den vermögensaufbau wenn ja wie viel']),
-      relationship: norm(o['beziehungsstand']),
-      expectation: norm(o['was erhoffst du dir von den 4 abenden']),
-    },
+    emailTypeform: normEmail(o[T.emailTypeform]),
+    phone: norm(o[T.phone]),
+    answers,
     utm: {
-      source: norm(o['utm_source']),
-      medium: norm(o['utm_medium']),
-      campaign: norm(o['utm_campaign']),
-      term: norm(o['utm_term']),
+      source: norm(o[T.utmSource]),
+      medium: norm(o[T.utmMedium]),
+      campaign: norm(o[T.utmCampaign]),
+      term: norm(o[T.utmTerm]),
     },
   };
 }
@@ -176,7 +180,9 @@ function parseTicketRow(o) {
  * Hauptfunktion: bekommt die Tabs als [{title, values}] und liefert
  * { leads, tickets, overview, warnings }.
  */
-export function parseSheets(sheets) {
+export function parseSheets(sheets, project = DEFAULTS) {
+  const q = project.questionnaire;
+  const features = project.features;
   const leads = [];
   const tickets = [];
   const overview = [];
@@ -185,17 +191,17 @@ export function parseSheets(sheets) {
 
   for (const sheet of sheets) {
     const rows = sheet.values || [];
-    for (const table of iterateTables(rows)) {
+    for (const table of iterateTables(rows, q, features)) {
       for (const row of table.body) {
         const o = rowToObj(table.header, row);
         if (table.type === 'overview') {
           const r = parseOverviewRow(o);
           if (r) overview.push(r);
         } else if (table.type === 'leads') {
-          const r = parseLeadRow(o);
+          const r = parseLeadRow(o, q);
           if (r) leads.push(r);
         } else if (table.type === 'tickets') {
-          const r = parseTicketRow(o);
+          const r = parseTicketRow(o, q);
           if (!r) continue;
           // Dedupe (das Sheet enthält teils zwei Ticket-Tabs)
           const dk = `${r.email}|${r.at || ''}`;

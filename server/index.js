@@ -8,6 +8,7 @@ import { fetchAllSheets, isConfigured } from './sheets.js';
 import { parseSheets } from './parser.js';
 import { buildDataset } from './build.js';
 import { loadScoringConfig } from './scoring.js';
+import { loadProjectConfig, publicProject } from './config.js';
 import { getSampleParsed } from './sample-data.js';
 import { isSupermetricsConfigured, fetchFbInsights, aggregateFb } from './supermetrics.js';
 import { isMetaConfigured, fetchMetaAll } from './meta.js';
@@ -54,17 +55,18 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
     return hit.payload;
   }
   const cfg = loadScoringConfig();
+  const project = loadProjectConfig();
   let parsed;
   let source;
   if (isConfigured()) {
     const sheets = await fetchAllSheets();
-    parsed = parseSheets(sheets);
+    parsed = parseSheets(sheets, project);
     source = 'google';
   } else {
     parsed = getSampleParsed();
     source = 'demo';
   }
-  const dataset = buildDataset(parsed, cfg);
+  const dataset = buildDataset(parsed, cfg, project);
 
   // Facebook-Ads-Daten: bevorzugt direkt über die Meta Marketing API,
   // alternativ über Supermetrics. Fehler hier dürfen das Sheet-Dashboard
@@ -102,6 +104,7 @@ async function loadDataset({ refresh = false, from = '', to = '' } = {}) {
     source,
     fetchedAt: new Date().toISOString(),
     range: range || null,
+    project: publicProject(project),
     scoring: { weights: cfg.weights, tiers: cfg.tiers },
     fb,
     ...dataset,
@@ -158,8 +161,8 @@ app.post('/api/chat', async (req, res) => {
     const isYmd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
     const payload = await loadDataset({ from: isYmd(from) ? from : '', to: isYmd(to) ? to : '' });
     const leadsInRange = filterLeadsByRange(payload.leads, isYmd(from) ? from : '', isYmd(to) ? to : '');
-    const context = buildContext(payload, leadsInRange);
-    const answer = await chat({ messages: messages.slice(-12), context });
+    const context = buildContext(payload, leadsInRange, payload.project);
+    const answer = await chat({ messages: messages.slice(-12), context, project: payload.project });
     res.json({ answer });
   } catch (err) {
     console.error('Chat-Fehler:', err.message);
@@ -176,12 +179,13 @@ if (fs.existsSync(distDir)) {
   app.get('/', (req, res) =>
     res
       .type('html')
-      .send('<h1>MMV Dashboard – API läuft</h1><p>Frontend noch nicht gebaut. Im Dev: <code>npm run dev</code> und <a href="http://localhost:5173">localhost:5173</a> öffnen. Für Production: <code>npm run serve</code>.</p>')
+      .send('<h1>Dashboard – API läuft</h1><p>Frontend noch nicht gebaut. Im Dev: <code>npm run dev</code> und <a href="http://localhost:5173">localhost:5173</a> öffnen. Für Production: <code>npm run serve</code>.</p>')
   );
 }
 
 app.listen(PORT, () => {
   const mode = isConfigured() ? 'Google Sheets (live)' : 'DEMO (synthetische Daten)';
-  console.log(`\n  MMV Dashboard-Server läuft auf  http://localhost:${PORT}`);
+  const name = loadProjectConfig().name || 'Dashboard';
+  console.log(`\n  ${name} – Dashboard-Server läuft auf  http://localhost:${PORT}`);
   console.log(`  Datenquelle: ${mode}\n`);
 });

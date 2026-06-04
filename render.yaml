@@ -4,7 +4,7 @@
 
 services:
   - type: web
-    name: mmv-fuatmarta-dashboard
+    name: proscaling-dashboard
     runtime: node
     plan: free
     # devDependencies (vite) werden für den Build gebraucht -> explizit mitinstallieren
@@ -18,7 +18,7 @@ services:
       - key: NPM_CONFIG_PRODUCTION
         value: "false"
       - key: SPREADSHEET_ID
-        value: 1rxK4s-qh1Enbw5L_Ni37xikPEpFe82-5w_7GT-PX6ng
+        value: 11tCy8Xjh2CJHRku89vFXAUHflxLRIDtvIHOgsCblp38
       - key: CACHE_TTL_SECONDS
         value: "900"
       # --- KI-Chatbot (optional) – Anthropic-API-Key ---
