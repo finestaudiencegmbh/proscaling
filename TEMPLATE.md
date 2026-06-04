@@ -3,9 +3,9 @@
 Diese Codebasis ist ein **generisches Lead- & Kampagnen-Dashboard**: Es liest
 ein Google Tracking Sheet live aus, holt (optional) die Facebook-Ads-Zahlen aus
 der Meta Marketing API und schlüsselt Leads nach Kampagne → Anzeigengruppe →
-Creative → Placement auf. Eine **zweite Funnel-Stufe** (z. B. Tickets/Termine)
-und ein **Fragebogen-basiertes Lead-Qualitäts-Scoring** lassen sich per
-Feature-Flag zu- oder abschalten.
+Creative → Placement auf. **Beliebig viele Funnel-Stufen nach dem Lead**
+(z. B. Ticket; oder Erstgespräch → Zweitgespräch) und ein **Fragebogen-basiertes
+Lead-Qualitäts-Scoring** lassen sich per Konfiguration zu- oder abschalten.
 
 Ein neues Projekt aufzusetzen heißt: **eine Config-Datei ausfüllen**, ein paar
 **Umgebungsvariablen** setzen und das Sheet freigeben. Kein Code-Umbau nötig.
@@ -32,27 +32,31 @@ mit Tickets + Qualität, deutschem Fragebogen).
   },
 
   "features": {
-    "hasTickets": false,    // zweite Funnel-Stufe (Ticket/Termin/Call) an/aus
     "hasQuality": false     // Fragebogen-Lead-Qualitäts-Scoring an/aus
   },
 
-  "labels": {
-    "ticketSingular": "Ticket",  // Beschriftung der Stufe (nur bei hasTickets)
-    "ticketPlural":   "Tickets"
-  }
+  "stages": [               // Funnel-Stufen NACH dem Lead (siehe Abschnitt 2). Leer = nur Leads.
+    { "key": "eg", "singular": "Erstgespräch", "plural": "Erstgespräche", "short": "EG", "color": "#6fcf97", "sheet": { /* … */ } }
+  ]
 }
 ```
 
-### Was die Feature-Flags bewirken
+### Funnel-Stufen (`stages`) und `hasQuality`
 
-| Flag | `false` blendet überall sauber aus … |
-| --- | --- |
-| `hasTickets` | KPI-Karten „… (Paid/Organisch)" und „Kosten/Ticket", Tabellen-Spalten **Tickets**, **€/Ticket**, **CVR Ticket**, die **VIP-Spalte** der Leadliste, die Ticket-Serie im Verlauf und die Ticket-Tiles in der Kampagnen-Ansicht. |
-| `hasQuality` | die ganze **Lead-Qualitäts-Sektion** (Quali-Rate, Ø Quali, Tier-Verteilung, Tagesverlauf), die Spalten **Quali-Rate**/**Ø Quali**, die **Qualitäts-Badges** + Fragebogen-Antworten der Leadliste, die Quali-Felder im CSV-Export und die Fragebogen-Filter (Einkommen/Immobilien/Beschäftigung/Tier). |
+- **`stages`** ist eine geordnete Liste von Stufen nach dem Lead. Jede Stufe wird
+  als eigener Sheet-Tab erkannt, per E-Mail an den Lead gejoint und trägt eine
+  eigene UTM-Attribution. Das Dashboard zeigt je Stufe automatisch **Anzahl**,
+  **Kosten/Stufe** (auf Lead-Spend) und **CVR von der Vorstufe** – in KPIs,
+  Breakdown-Tabellen, der Leadliste (eine Spalte je Stufe) und der
+  Kampagnen-Aufschlüsselung. Eine **leere** Liste = reines Leads-/Spend-Dashboard.
+- **`hasQuality: false`** blendet die komplette **Lead-Qualitäts-Sektion** aus
+  (Quali-Rate, Ø Quali, Tier-Verteilung, Qualitäts-Badges, Fragebogen-Antworten,
+  CSV-Quali-Felder und die Fragebogen-Filter). Quality gehört zur Stufe mit
+  `"quality": true` (im Default die „Ticket"-Stufe).
 
 > `scoring.json` (Bewertungsmodell) und `campaigns.json` (Lead- vs.
-> Traffic-Kampagnen) bleiben wie gehabt und werden **nicht** durch die Flags
-> ersetzt – sie greifen nur, wenn `hasQuality` bzw. die Meta-Anbindung aktiv ist.
+> Traffic-Kampagnen, **organicPatterns/paidPatterns** für die Paid-Erkennung)
+> bleiben bestehen und werden nicht durch die Config ersetzt.
 
 ### Branding ändern
 
@@ -64,34 +68,57 @@ Favicon ist `web/public/logo.svg` (separat ersetzen, falls gewünscht).
 
 ---
 
-## 2. Sheet-Spalten zuordnen (nur bei `hasTickets`/`hasQuality`)
+## 2. Sheet-Spalten zuordnen
 
 Der Parser erkennt die Tabellen **an ihren Kopfzeilen**, nicht an Tab-Namen. Die
-Standard-Zuordnung (`server/config.js` → `questionnaire`) passt zum deutschen
-Referenz-Sheet. Hat das neue Projekt **andere Spaltennamen** oder einen anderen
-Fragebogen, in `project.config.json` ein `questionnaire`-Objekt ergänzen –
-es überschreibt nur die genannten Felder:
+Standard-Zuordnung (`server/config.js` → `sheet` / `stages`) passt zum deutschen
+Referenz-Sheet. Hat das neue Projekt andere Spaltennamen, in `project.config.json`
+die passenden Felder überschreiben.
 
+**Lead-Tabelle** (`sheet.lead`):
 ```jsonc
-"questionnaire": {
-  "classify": {
-    "overviewHas": ["anzeigengruppe", "adspend"],   // erkennt die Adspend-Übersicht
-    "ticketsSome": ["monatliches einkommen"],        // erkennt den Fragebogen-Tab
-    "ticketsHas":  ["teilgenommen am", "vorname"],
-    "leadsHas":    ["gewonnen am"],                   // erkennt die Lead-Liste
-    "leadsSome":   ["utm_source", "e-mail"]
-  },
-  "lead":   { "wonAt": "gewonnen am", "email": "e-mail", "utmSource": "utm_source", "...": "..." },
-  "ticket": { "date": "teilgenommen am", "emailColumns": ["e-mail"], "...": "..." },
-  "answers": { "income": "monatliches einkommen", "employment": "...", "...": "..." }
+"sheet": {
+  "lead": {
+    "classifyHas":  ["datum"],                 // Pflichtspalten zur Erkennung
+    "classifySome": ["e-mail", "utm source"],  // mindestens eine davon
+    "wonAt": "datum",
+    "name":  "name",        // EIN Namensfeld …
+    // ODER: "firstName": "vorname", "lastName": "nachname"
+    "email": "e-mail",
+    "phone": "telefon",
+    "utmSource": "utm source", "utmMedium": "utm medium",
+    "utmCampaign": "utm campaign", "utmTerm": "utm term"
+  }
 }
 ```
 
-Schlüssel sind **normalisiert** (klein, ohne `? : .`, Mehrfach-Leerzeichen
-zusammengefasst) – genau so, wie der Parser die Kopfzellen vergleicht.
+**Funnel-Stufen** (`stages[]`): jede Stufe ist ein eigener Tab, erkannt an einer
+eindeutigen Spalte (`classifyHas`), per E-Mail an den Lead gejoint:
+```jsonc
+"stages": [
+  {
+    "key": "eg", "singular": "Erstgespräch", "plural": "Erstgespräche",
+    "short": "EG", "color": "#6fcf97",
+    "sheet": {
+      "classifyHas": ["e-mail", "klient"],     // eindeutige Spalte des EG-Tabs
+      "date": "datum", "name": "name", "emailColumns": ["e-mail"], "phone": "telefon",
+      "utmSource": "utm source", "utmMedium": "utm medium",
+      "utmCampaign": "utm campaign", "utmTerm": "utm term"
+    }
+  }
+]
+```
+Optionen je Stufe: `"quality": true` (Stufe trägt das Fragebogen-Scoring, dazu
+`"answers": { "income": "…", … }`), `"emailColumns"` (mehrere Mail-Spalten),
+`"leadMarker"` (Spalte in der Lead-Zeile, die die Stufe markiert).
 
-> Bei `hasTickets = false` **und** `hasQuality = false` wird gar kein
-> Fragebogen-Tab erkannt – das `questionnaire`-Mapping ist dann irrelevant.
+> Schlüssel sind **normalisiert** (klein, ohne `? : .`, Mehrfach-Leerzeichen
+> zusammengefasst) – genau so, wie der Parser die Kopfzellen vergleicht. Beispiel:
+> `UTM Source` → `utm source`, `Angestellt, Selbstständig?` → `angestellt, selbstständig`.
+
+**Paid/Organisch:** ob ein Lead bezahlt ist, steuert `config/campaigns.json`
+(`organicPatterns`, `paidPatterns` – z. B. `"//"` im Targeting-Namen). Der
+Ad-Spend kommt live aus der Meta-API.
 
 ---
 
@@ -158,8 +185,9 @@ npm test          # Parser-, Combine-, Meta-, Supermetrics- & Feature-Flag-Tests
 ```
 
 Checkliste fürs neue Projekt:
-- [ ] `config/project.config.json`: Name, Branding, Flags gesetzt
-- [ ] (falls Flags an) `questionnaire`-Mapping auf die echten Sheet-Spalten geprüft
+- [ ] `config/project.config.json`: Name, Branding, `stages`, `hasQuality` gesetzt
+- [ ] `sheet.lead`- und `stages[].sheet`-Mapping auf die echten Sheet-Kopfzeilen geprüft
+- [ ] `config/campaigns.json`: `organicPatterns`/`paidPatterns` passend gesetzt
 - [ ] `SPREADSHEET_ID` gesetzt und Service-Account im Sheet freigegeben
 - [ ] `DASHBOARD_USER` / `DASHBOARD_PASSWORD` gesetzt (vor dem Teilen!)
 - [ ] (optional) `META_ACCESS_TOKEN` + `META_AD_ACCOUNT_ID` für Live-Ads-Zahlen
