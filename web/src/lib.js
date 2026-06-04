@@ -298,6 +298,22 @@ const nextDay = (ymd) => {
   return d.toISOString().slice(0, 10);
 };
 
+/**
+ * Füllt eine Tagesreihe lückenlos auf, damit Graphen an leeren Tagen auf 0 fallen
+ * statt Datumsbereiche zu überspringen. rows = [{date, ...}]. Fehlende Tage werden
+ * über makeZero(date) ergänzt. Bereich = range {from,to} ODER die Daten-Spanne.
+ */
+export function fillDaysBy(rows, range = null, makeZero = (date) => ({ date, value: 0 })) {
+  const m = new Map((rows || []).filter((r) => /^\d{4}-\d{2}-\d{2}/.test(r.date)).map((r) => [r.date.slice(0, 10), r]));
+  let from = range?.from;
+  let to = range?.to;
+  if (!(from && to)) { const ds = [...m.keys()].sort(); if (ds.length) { from = from || ds[0]; to = to || ds[ds.length - 1]; } }
+  if (!(from && to) || from > to) return rows || [];
+  const out = [];
+  for (let d = from; d <= to; d = nextDay(d)) out.push(m.get(d) || makeZero(d));
+  return out;
+}
+
 /** Tägliche Leads/Tickets aus (gefilterten) Leads – für den Verlaufs-Graphen.
  *  Mit range = {from,to} wird der GANZE Zeitraum gefüllt (leere Tage = 0), damit
  *  die Achse den gewählten Bereich zeigt – auch Randtage ohne Leads. */

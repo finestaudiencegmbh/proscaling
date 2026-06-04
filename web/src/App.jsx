@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchData } from './api.js';
-import { applyFilters, aggregate, computeKpis, tierDistribution, leadsByDay, leadsByTime, cplByDay, qualityByDay, DIMENSIONS, fmtDate } from './lib.js';
+import { applyFilters, aggregate, computeKpis, tierDistribution, leadsByDay, leadsByTime, cplByDay, qualityByDay, fillDaysBy, dayKey, DIMENSIONS, fmtDate } from './lib.js';
 import Kpis from './components/Kpis.jsx';
 import Filters from './components/Filters.jsx';
 import BreakdownTable from './components/BreakdownTable.jsx';
@@ -101,8 +101,22 @@ export default function App() {
   const dist = useMemo(() => (data ? tierDistribution(filtered, tiers) : {}), [data, filtered, tiers]);
   // Stunden-Raster, wenn der gewählte Zeitraum genau EIN Tag ist (0–24 Uhr).
   const hourlyDay = (range.from && range.to && range.from === range.to) ? range.from : null;
-  const leadDaily = useMemo(() => (data ? leadsByTime(filtered, hourlyDay, range) : []), [data, filtered, hourlyDay, range]);
-  const cplDaily = useMemo(() => ((hasFb && fb.daily) ? cplByDay(fb.daily.spend, filtered) : []), [hasFb, fb, filtered]);
+  // Gemeinsamer Achsen-Zeitraum für ALLE Tages-Graphen: gewählter Zeitraum, sonst
+  // die Spanne aus Lead- UND Spend-Daten. So haben Leads, Ad-Spend & CPL dieselbe
+  // lückenlose Achse und fallen an leeren Tagen auf 0.
+  const dayRange = useMemo(() => {
+    if (range.from && range.to) return { from: range.from, to: range.to };
+    const ds = [];
+    for (const l of filtered) { const d = dayKey(l.wonAt); if (d) ds.push(d); }
+    for (const s of (hasFb && fb.daily ? fb.daily.spend : [])) if (s.date) ds.push(String(s.date).slice(0, 10));
+    if (!ds.length) return null;
+    ds.sort();
+    return { from: ds[0], to: ds[ds.length - 1] };
+  }, [range, filtered, hasFb, fb]);
+  const leadDaily = useMemo(() => (data ? leadsByTime(filtered, hourlyDay, dayRange) : []), [data, filtered, hourlyDay, dayRange]);
+  // Ad-Spend-Tagesreihe lückenlos auffüllen (leere Tage = 0)
+  const spendDaily = useMemo(() => fillDaysBy((hasFb && fb.daily ? fb.daily.spend : []), dayRange, (date) => ({ date, spend: 0, impressions: 0, clicks: 0 })), [hasFb, fb, dayRange]);
+  const cplDaily = useMemo(() => (hasFb ? cplByDay(spendDaily, filtered) : []), [hasFb, spendDaily, filtered]);
   const qualityDaily = useMemo(() => (data ? qualityByDay(filtered) : []), [data, filtered]);
 
   // Verlaufs-Serien: Leads immer, plus die Ticket-Stufe (sofern vorhanden) –
@@ -273,7 +287,7 @@ export default function App() {
                           series={verlaufSeries} />
                         <div className="charts-grid">
                           <TimeChart title="Ad-Spend pro Tag" formatY={(v) => fmtEur(Math.round(v))}
-                            series={[{ key: 'spend', label: 'Ad-Spend', color: accent, data: (hasFb && fb.daily ? fb.daily.spend : []).map((d) => ({ date: d.date, value: d.spend })) }]} />
+                            series={[{ key: 'spend', label: 'Ad-Spend', color: accent, data: spendDaily.map((d) => ({ date: d.date, value: d.spend })) }]} />
                           <TimeChart title="CPL pro Tag" formatY={(v) => fmtEur(Math.round(v))}
                             series={[{ key: 'cpl', label: 'CPL (Ads)', color: '#a78bfa', data: cplDaily.map((d) => ({ date: d.date, value: d.value })) }]} />
                         </div>
