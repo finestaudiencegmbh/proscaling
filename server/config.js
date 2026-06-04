@@ -68,8 +68,10 @@ export const DEFAULTS = {
     },
   ],
   sheet: {
-    // Lead-Tabelle.
+    // Lead-Tabelle. `tab` = (Teil-)Name des Sheet-Tabs; wenn gesetzt, wird der
+    // Tab ZUERST am Namen erkannt (robust, falls Spalten mehrdeutig sind).
     lead: {
+      tab: null,
       classifyHas: ['gewonnen am'],
       classifySome: ['utm_source', 'e-mail'],
       wonAt: 'gewonnen am',
@@ -85,6 +87,7 @@ export const DEFAULTS = {
     },
     // Adspend-Übersicht.
     overview: {
+      tab: null,
       classifyHas: ['anzeigengruppe', 'adspend'],
       dimension: 'anzeigengruppe', // Spalte mit dem Namen
       matches: 'adset', // welcher Lead-Dimension entspricht die Zeile: 'adset' | 'creative'

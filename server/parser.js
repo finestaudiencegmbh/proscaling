@@ -26,18 +26,47 @@ const key = (s) =>
     .trim();
 
 /**
- * Erkennt anhand einer Kopfzeile, um welchen Tabellentyp es sich handelt.
- * Reihenfolge: Übersicht -> Stufen (in Config-Reihenfolge) -> Leads. Die Stufen
- * werden VOR den Leads geprüft, weil sich Stufen-Tabs (EG/ZG) oft nur durch
- * eine Zusatzspalte (z. B. "Klient"/"Closer") von der Lead-Tabelle unterscheiden.
+ * Bestimmt den Tabellentyp aus dem TAB-NAMEN (sofern in der Config `tab` gesetzt).
+ * Das ist die zuverlässigste Erkennung – nötig, wenn sich Tabs (Leadliste/EG)
+ * an den Spalten kaum unterscheiden. Reihenfolge: Übersicht -> Stufen -> Leads.
  */
-function classifyHeader(cells, project) {
+function tabTypeFromTitle(title, project) {
+  const t = key(title);
+  if (!t) return null;
+  const m = (pat) => pat && t.includes(key(pat));
+  if (m(project.sheet.overview?.tab)) return 'overview';
+  for (const stage of project.stages || []) if (m(stage.sheet?.tab)) return `stage:${stage.key}`;
+  if (m(project.sheet.lead?.tab)) return 'leads';
+  return null;
+}
+
+/** Schlüsselspalten, an denen die Kopfzeile eines (namensbasiert) erzwungenen
+ *  Typs erkannt wird (zur Trennung Header vs. Datenzeile). */
+function headerKeysFor(type, project) {
+  if (type === 'overview') return [project.sheet.overview.dimension, project.sheet.overview.adspend].filter(Boolean);
+  if (type === 'leads') return [project.sheet.lead.wonAt, project.sheet.lead.email].filter(Boolean);
+  if (type && type.startsWith('stage:')) {
+    const s = (project.stages || []).find((x) => `stage:${x.key}` === type);
+    return s ? [s.sheet.date, ...(s.sheet.emailColumns || [])].filter(Boolean) : [];
+  }
+  return [];
+}
+
+/**
+ * Erkennt anhand einer Kopfzeile, um welchen Tabellentyp es sich handelt.
+ * Ist der Tab bereits über seinen Namen einem Typ zugeordnet (forcedType), gilt
+ * dieser – die Kopfzeile wird nur noch von Datenzeilen unterschieden. Sonst:
+ * Übersicht -> Stufen -> Leads (Stufen vor Leads, da Spalten ähnlich sind).
+ */
+function classifyHeader(cells, project, forcedType = null) {
   const set = new Set(cells.map(key));
   const has = (keys) => (keys || []).length > 0 && (keys || []).every((k) => set.has(k));
   const some = (keys) => (keys || []).some((k) => set.has(k));
+
+  if (forcedType) return some(headerKeysFor(forcedType, project)) ? forcedType : null;
+
   const ov = project.sheet.overview;
   const ld = project.sheet.lead;
-
   if (has(ov.classifyHas)) return 'overview';
   for (const stage of project.stages || []) {
     const c = stage.sheet || {};
@@ -92,7 +121,7 @@ const resolveUtm = (o, m) => ({
  * untereinander gestapelte Tabellen enthalten (z. B. die Übersicht mit
  * mehreren Kampagnen).
  */
-function* iterateTables(rows, project) {
+function* iterateTables(rows, project, forcedType = null) {
   let header = null;
   let type = null;
   let body = [];
@@ -101,7 +130,7 @@ function* iterateTables(rows, project) {
     return null;
   };
   for (const row of rows) {
-    const t = classifyHeader(row.map(norm).filter(Boolean).length >= 2 ? row : [], project);
+    const t = classifyHeader(row.map(norm).filter(Boolean).length >= 2 ? row : [], project, forcedType);
     if (t) {
       const prev = flush();
       if (prev) yield prev;
@@ -218,7 +247,8 @@ export function parseSheets(sheets, project = DEFAULTS) {
 
   for (const sheet of sheets) {
     const rows = sheet.values || [];
-    for (const table of iterateTables(rows, project)) {
+    const forcedType = tabTypeFromTitle(sheet.title, project);
+    for (const table of iterateTables(rows, project, forcedType)) {
       for (const row of table.body) {
         const o = rowToObj(table.header, row);
         if (table.type === 'overview') {

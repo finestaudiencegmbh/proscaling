@@ -27,6 +27,7 @@
       "color": "#6fcf97",
       "standalone": true,
       "sheet": {
+        "tab": "egs",
         "classifyHas": ["e-mail", "klient"],
         "date": "datum",
         "name": "name",
@@ -46,6 +47,7 @@
       "color": "#5ad0c0",
       "standalone": true,
       "sheet": {
+        "tab": "zgs",
         "classifyHas": ["e-mail", "closer"],
         "date": "datum",
         "name": "name",
@@ -62,6 +64,7 @@
   "_comment_sheet": "Spalten-Mapping. Die ProScaling-Leadliste hat ein einzelnes 'Name'-Feld, Datum heißt 'Datum', UTMs mit Leerzeichen ('UTM Source'). Die Adspend-Übersicht (nach Creative) wird NICHT aus dem Sheet gelesen – der Ad-Spend kommt live aus der Meta-API.",
   "sheet": {
     "lead": {
+      "tab": "leadliste",
       "classifyHas": ["datum"],
       "classifySome": ["e-mail", "utm source"],
       "wonAt": "datum",

@@ -108,5 +108,32 @@ assert.equal(egPaid, 2, 'beide EG-Events sind bezahlt (// im Targeting)');
 const news = ts.leads.find((l) => l.email === 'news@x.de');
 assert.equal(news.sourceType, 'organic', 'Newsletter-Lead ist organisch');
 
+// --- 4) Tab-Namen-Erkennung trennt Leadliste & EG, auch bei gleichen Spalten ---
+// Die Leadliste hat hier (wie im echten Sheet) eine leere "Klient"-Spalte – an
+// den Spalten allein wäre sie nicht vom EG-Tab zu unterscheiden. Der Tab-Name
+// entscheidet.
+const byTab = {
+  ...twoStage,
+  sheet: { ...twoStage.sheet, lead: { ...twoStage.sheet.lead, tab: 'leadliste' } },
+  stages: twoStage.stages.map((s) => ({ ...s, sheet: { ...s.sheet, tab: s.key === 'eg' ? 'egs' : 'zgs' } })),
+};
+const leadTab = { title: 'Leadliste_2026', values: [
+  ['Datum', 'Name', 'E-Mail', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Term', 'Klient'],
+  ['2026-05-09 16:33:20 +0000', 'Nico', 'nico@gmx.de', 'AG1: SIT // DE AT // 25-55', 'C2', 'ABO', 'Instagram_Reels', ''],
+  ['2026-05-09 17:00:00 +0000', 'Lara', 'lara@x.de', 'AG1: SIT // DE AT // 25-55', 'C2', 'ABO', 'Instagram_Reels', ''],
+] };
+const egTab = { title: 'EGs_2026', values: [
+  ['Datum', 'Name', 'E-Mail', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Term', 'Klient'],
+  ['2026-05-11 10:00:00 +0000', 'Nico', 'nico@gmx.de', 'AG1: SIT // DE AT // 25-55', 'C2', 'ABO', 'Instagram_Reels', ''],
+] };
+const zgTab = { title: 'ZGs_2026', values: [
+  ['Datum', 'Name', 'E-Mail', 'UTM Source 1', 'UTM Medium 1', 'UTM Campaign 1', 'UTM Term 1', 'Closer'],
+  ['2026-05-12 10:00:00 +0000', 'Nico', 'nico@gmx.de', 'AG1: SIT // DE AT // 25-55', 'C2', 'ABO', 'Instagram_Reels', 'Tom'],
+] };
+const tabParsed = parseSheets([leadTab, egTab, zgTab], byTab);
+assert.equal(tabParsed.leads.length, 2, 'Leadliste (trotz leerer Klient-Spalte) als Leads erkannt – nicht als EG');
+assert.equal(tabParsed.stages.eg.length, 1, 'EGs_2026 am Tab-Namen als EG erkannt');
+assert.equal(tabParsed.stages.zg.length, 1, 'ZGs_2026 am Tab-Namen als ZG erkannt');
+
 console.log('✓ Alle Funnel-Stufen-Tests bestanden');
 console.log(`  Default: tickets=${def.counts.tickets} | keine Stufen: leads=${ns.counts.leads} | zwei Stufen: eg=${ts.counts.stages.eg} zg=${ts.counts.stages.zg}`);
