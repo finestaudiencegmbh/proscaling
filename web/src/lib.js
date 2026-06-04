@@ -291,8 +291,17 @@ export function computeKpis(leads, overviewByAdset, fb, stageDefs = [], stageRec
   };
 }
 
-/** Tägliche Leads/Tickets aus (gefilterten) Leads – für den Verlaufs-Graphen. */
-export function leadsByDay(leads) {
+/** Nächster Tag (YYYY-MM-DD) in UTC. */
+const nextDay = (ymd) => {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Tägliche Leads/Tickets aus (gefilterten) Leads – für den Verlaufs-Graphen.
+ *  Mit range = {from,to} wird der GANZE Zeitraum gefüllt (leere Tage = 0), damit
+ *  die Achse den gewählten Bereich zeigt – auch Randtage ohne Leads. */
+export function leadsByDay(leads, range = null) {
   const m = new Map();
   for (const l of leads) {
     const day = dayKey(l.wonAt);
@@ -301,6 +310,11 @@ export function leadsByDay(leads) {
     const e = m.get(day);
     e.leads += 1;
     if (l.hasTicket) e.tickets += 1;
+  }
+  if (range?.from && range?.to && range.from <= range.to) {
+    for (let d = range.from; d <= range.to; d = nextDay(d)) {
+      if (!m.has(d)) m.set(d, { date: d, leads: 0, tickets: 0 });
+    }
   }
   return [...m.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 }
@@ -334,8 +348,8 @@ function finalizeMinuteBuckets(buckets) {
  * Verlauf nach Zeit. Bei hourlyDay = 'YYYY-MM-DD' werden minutengenaue Buckets
  * dieses Tages gebildet (Ausschlag-Linie, 0 zwischen Leads). Sonst Tagesreihe.
  */
-export function leadsByTime(leads, hourlyDay = null) {
-  if (!hourlyDay) return leadsByDay(leads);
+export function leadsByTime(leads, hourlyDay = null, range = null) {
+  if (!hourlyDay) return leadsByDay(leads, range);
   const buckets = emptyMinuteBuckets(hourlyDay);
   for (const l of leads) {
     if (dayKey(l.wonAt) !== hourlyDay) continue;

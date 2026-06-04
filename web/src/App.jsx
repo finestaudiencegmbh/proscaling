@@ -101,7 +101,7 @@ export default function App() {
   const dist = useMemo(() => (data ? tierDistribution(filtered, tiers) : {}), [data, filtered, tiers]);
   // Stunden-Raster, wenn der gewählte Zeitraum genau EIN Tag ist (0–24 Uhr).
   const hourlyDay = (range.from && range.to && range.from === range.to) ? range.from : null;
-  const leadDaily = useMemo(() => (data ? leadsByTime(filtered, hourlyDay) : []), [data, filtered, hourlyDay]);
+  const leadDaily = useMemo(() => (data ? leadsByTime(filtered, hourlyDay, range) : []), [data, filtered, hourlyDay, range]);
   const cplDaily = useMemo(() => ((hasFb && fb.daily) ? cplByDay(fb.daily.spend, filtered) : []), [hasFb, fb, filtered]);
   const qualityDaily = useMemo(() => (data ? qualityByDay(filtered) : []), [data, filtered]);
 
