@@ -11,7 +11,10 @@ export const fmtScore = (n) => (n == null ? '–' : String(Math.round(n)));
 export const fmtDate = (iso) => {
   if (!iso) return '–';
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '–' : d.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+  // Wanduhr-Zeit unverändert anzeigen: der gespeicherte Zeitstempel ist bereits
+  // deutsche Ortszeit (als UTC abgelegt), daher KEINE Umrechnung in die
+  // Browser-Zeitzone (sonst +2 h o. ä.).
+  return Number.isNaN(d.getTime()) ? '–' : d.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
 };
 
 // Tagesschlüssel = UTC-Datum aus dem Zeitstempel. Das entspricht exakt dem im

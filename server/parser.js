@@ -93,11 +93,16 @@ function isEmptyRow(row) {
 function parseDate(s) {
   const v = norm(s);
   if (!v) return null;
-  // Nur echte Datumsangaben akzeptieren (Format im Sheet:
-  // "2026-05-26 18:46:08 +0000"). Verhindert, dass Zähl-/Summenzeilen
-  // wie "161" fälschlich als Datum (Jahr 161) interpretiert werden.
-  if (!/^\d{4}-\d{2}-\d{2}/.test(v)) return null;
-  const d = new Date(v.replace(' +0000', 'Z').replace(' ', 'T'));
+  // Die Zeit im Sheet ist bereits deutsche Wanduhr-Zeit. Sie wird daher 1:1
+  // übernommen (KEINE Zeitzonen-Umrechnung): die Ziffern werden direkt als
+  // UTC-Wanduhr abgelegt. Ein evtl. Suffix wie " +0000" wird ignoriert. So
+  // bleibt sie konsistent zur Anzeige (fmtDate nutzt timeZone:'UTC') und zur
+  // Tages-/Minuten-Bucketisierung (String-Slicing). Verhindert auch, dass
+  // Zähl-/Summenzeilen wie "161" fälschlich als Datum interpretiert werden.
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) return null;
+  const [, Y, Mo, D, H = '00', Mi = '00', S = '00'] = m;
+  const d = new Date(Date.UTC(+Y, +Mo - 1, +D, +H, +Mi, +S));
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
