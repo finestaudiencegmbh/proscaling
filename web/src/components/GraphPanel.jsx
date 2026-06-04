@@ -26,7 +26,7 @@ const KPIS = [
   { key: 'cpl', label: 'CPL (€/Lead)', color: '#5ad0c0', fmt: fmtEur2,
     value: (p) => (p.leads ? p.spend / p.leads : null),
     total: (t) => (t.leads ? t.spend / t.leads : null) },
-  { key: 'cpt', label: 'Kosten/Ticket', color: '#f2b705', fmt: fmtEur2,
+  { key: 'cpt', label: 'Kosten/Ticket', color: '#f2b705', fmt: fmtEur2, feature: 'tickets',
     value: (p) => (p.tickets ? p.spend / p.tickets : null),
     total: (t) => (t.tickets ? t.spend / t.tickets : null) },
   { key: 'cpm', label: 'CPM', color: '#7c9cff', fmt: fmtEur2,
@@ -49,7 +49,19 @@ export default function GraphPanel({ title, levelLabel, series, hourly = false, 
   // hasQuality. Das Leads-KPI nutzt die Akzentfarbe (Branding).
   const ticketStage = stages.find((s) => s.key === 'ticket') || null;
   const present = { tickets: Boolean(ticketStage), quality: Boolean(features.hasQuality) };
-  const kpiList = (hourly ? KPIS.filter((k) => k.sheet) : KPIS)
+  // Pro eigenständiger Funnel-Stufe (z. B. EG, ZG): Anzahl (Sheet, auch stündlich)
+  // und Kosten/Stufe (= Adspend ÷ Anzahl, nur im Tagesverlauf).
+  const stageKpis = [];
+  for (const s of stages.filter((s) => s.standalone)) {
+    stageKpis.push({ key: `st_${s.key}_n`, label: s.plural, color: s.color || '#6fcf97', fmt: fmtInt, sheet: true,
+      value: (p) => p.stages?.[s.key] ?? 0,
+      total: (t) => t.stages?.[s.key] ?? 0 });
+    stageKpis.push({ key: `st_${s.key}_cpa`, label: `Kosten/${s.short || s.singular}`, color: s.color || '#f2b705', fmt: fmtEur2,
+      value: (p) => (p.stages?.[s.key] ? p.spend / p.stages[s.key] : null),
+      total: (t) => (t.stages?.[s.key] ? t.spend / t.stages[s.key] : null) });
+  }
+  const baseList = [...KPIS, ...stageKpis];
+  const kpiList = (hourly ? baseList.filter((k) => k.sheet) : baseList)
     .filter((k) => !k.feature || present[k.feature])
     .map((k) => {
       if (k.key === 'leads') return { ...k, color: accent };
@@ -75,24 +87,39 @@ export default function GraphPanel({ title, levelLabel, series, hourly = false, 
     return m >= winStart && m < winStart + winSize;
   };
 
+  // Tagesreihe lückenlos auffüllen (leere Tage = 0), damit die Linie nicht über
+  // datenlose Tage hinweg springt. Nur im Tagesverlauf (Stunden-Modus ist dicht).
+  const filledSeries = useMemo(() => {
+    if (hourly || !series || series.length === 0) return series || [];
+    const byDate = new Map(series.filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.date)).map((p) => [p.date.slice(0, 10), p]));
+    const dates = [...byDate.keys()].sort();
+    if (dates.length === 0) return series;
+    const next = (ymd) => { const d = new Date(`${ymd}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
+    const zero = (date) => ({ date, spend: 0, impressions: 0, uoc: 0, clicks: 0, platforms: {}, leads: 0, tickets: 0, quality: null, stages: {} });
+    const out = [];
+    for (let cur = dates[0], last = dates[dates.length - 1]; cur <= last; cur = next(cur)) out.push(byDate.get(cur) || zero(cur));
+    return out;
+  }, [series, hourly]);
+
   // Plattformen, die in der Zeitreihe vorkommen
   const platforms = useMemo(() => {
     const set = new Set();
-    (series || []).forEach((p) => Object.keys(p.platforms || {}).forEach((k) => { if ((p.platforms[k] || 0) > 0) set.add(k); }));
+    filledSeries.forEach((p) => Object.keys(p.platforms || {}).forEach((k) => { if ((p.platforms[k] || 0) > 0) set.add(k); }));
     return [...set].sort();
-  }, [series]);
+  }, [filledSeries]);
 
   // Periodensummen für die Legenden-Werte
   const totals = useMemo(() => {
-    const t = { spend: 0, impressions: 0, uoc: 0, leads: 0, tickets: 0, qSum: 0, qLeads: 0, platforms: {} };
-    (series || []).forEach((p) => {
+    const t = { spend: 0, impressions: 0, uoc: 0, leads: 0, tickets: 0, qSum: 0, qLeads: 0, platforms: {}, stages: {} };
+    filledSeries.forEach((p) => {
       t.spend += p.spend || 0; t.impressions += p.impressions || 0; t.uoc += p.uoc || 0;
       t.leads += p.leads || 0; t.tickets += p.tickets || 0;
       if (p.quality != null && p.leads) { t.qSum += p.quality * p.leads; t.qLeads += p.leads; }
       Object.entries(p.platforms || {}).forEach(([k, v]) => { t.platforms[k] = (t.platforms[k] || 0) + (v || 0); });
+      Object.entries(p.stages || {}).forEach(([k, v]) => { t.stages[k] = (t.stages[k] || 0) + (v || 0); });
     });
     return t;
-  }, [series]);
+  }, [filledSeries]);
 
   // Aktive Serien zusammenbauen (KPIs + ggf. Plattform-Spend)
   const chartSeries = useMemo(() => {
@@ -102,7 +129,7 @@ export default function GraphPanel({ title, levelLabel, series, hourly = false, 
       out.push({
         key: k.key, label: k.label, color: k.color, fmt: k.fmt,
         agg: k.total(totals),
-        data: (series || []).map((p) => ({ date: p.date, value: k.value(p) })),
+        data: filledSeries.map((p) => ({ date: p.date, value: k.value(p) })),
       });
     });
     if (showPlatforms && !hourly) {
@@ -110,12 +137,12 @@ export default function GraphPanel({ title, levelLabel, series, hourly = false, 
         out.push({
           key: `pf_${pf}`, label: `Spend ${platformLabel(pf)}`, color: PLATFORM_COLORS[i % PLATFORM_COLORS.length], fmt: fmtEur,
           agg: totals.platforms[pf] || 0,
-          data: (series || []).map((p) => ({ date: p.date, value: (p.platforms || {})[pf] ?? null })),
+          data: filledSeries.map((p) => ({ date: p.date, value: (p.platforms || {})[pf] ?? null })),
         });
       });
     }
     return out;
-  }, [active, showPlatforms, platforms, series, totals, kpiList, hourly]);
+  }, [active, showPlatforms, platforms, filledSeries, totals, kpiList, hourly]);
 
   // Auf das gewählte Zeitfenster zuschneiden + Legenden-Aggregat neu berechnen
   const displaySeries = useMemo(() => {

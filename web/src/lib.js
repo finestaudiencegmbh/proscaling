@@ -311,8 +311,17 @@ export function leadsByDay(leads, range = null) {
     e.leads += 1;
     if (l.hasTicket) e.tickets += 1;
   }
-  if (range?.from && range?.to && range.from <= range.to) {
-    for (let d = range.from; d <= range.to; d = nextDay(d)) {
+  // Lückenlos auffüllen: gewählter Zeitraum ODER – falls keiner gesetzt – von der
+  // frühesten bis zur spätesten vorhandenen Lead-Zeile. So fällt die Linie an
+  // Tagen ohne Leads sauber auf 0, statt Tage zu überspringen.
+  let from = range?.from;
+  let to = range?.to;
+  if (!(from && to)) {
+    const days = [...m.keys()].sort();
+    if (days.length) { from = from || days[0]; to = to || days[days.length - 1]; }
+  }
+  if (from && to && from <= to) {
+    for (let d = from; d <= to; d = nextDay(d)) {
       if (!m.has(d)) m.set(d, { date: d, leads: 0, tickets: 0 });
     }
   }

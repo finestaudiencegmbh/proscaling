@@ -349,7 +349,7 @@ export function combineMetaWithLeads(meta, leads, opts = {}) {
   // Tagesreihen JE Entität (Kampagne/Anzeigengruppe/Creative) für die
   // "Grafik"-Ansicht: FB-Tagesdaten + Plattform-Split + Sheet-Leads/Tickets/
   // Qualität, alles je Tag. Schlüssel = normalisierter Name.
-  const dailyByEntity = buildDailyByEntity(dailyEntities, leads || []);
+  const dailyByEntity = buildDailyByEntity(dailyEntities, leads || [], stageDefs, stageRecords);
 
   // Minutengenaue Events je Entität (nur Sheet-KPIs: Leads/Tickets/Qualität),
   // wenn der Zeitraum genau EIN Tag ist. Meta-Spend ist hier (noch) nicht dabei.
@@ -374,7 +374,7 @@ export function combineMetaWithLeads(meta, leads, opts = {}) {
  * pro Plattform) und Sheet-Werten (leads/tickets/quality). Das Frontend leitet
  * daraus die überlagerbaren KPIs ab (CPL, CPM, CTR, CPC, €/Ticket, Qualität …).
  */
-function buildDailyByEntity(dailyEntities, leads) {
+function buildDailyByEntity(dailyEntities, leads, stageDefs = [], stageRecords = {}) {
   const dims = ['campaign', 'adset', 'creative'];
   const fb = { campaign: new Map(), adset: new Map(), creative: new Map() };
   const ensureDay = (map, key, date) => {
@@ -435,13 +435,34 @@ function buildDailyByEntity(dailyEntities, leads) {
     }
   }
 
+  // Eigenständige Funnel-Stufen (EG/ZG) je Entität & Tag – eigenes Datum/eigene UTM.
+  const stageDay = { campaign: new Map(), adset: new Map(), creative: new Map() };
+  const ensureStageDay = (map, key, date) => {
+    if (!map.has(key)) map.set(key, new Map());
+    const days = map.get(key);
+    if (!days.has(date)) days.set(date, {});
+    return days.get(date);
+  };
+  for (const s of stageDefs) {
+    for (const ev of (stageRecords[s.key] || [])) {
+      const day = (ev.wonAt || '').slice(0, 10);
+      if (!day) continue;
+      for (const dim of dims) {
+        if (!normKey(ev[dim])) continue;
+        const d = ensureStageDay(stageDay[dim], pathKey(dim, ev), day);
+        d[s.key] = (d[s.key] || 0) + 1;
+      }
+    }
+  }
+
   const out = { campaign: {}, adset: {}, creative: {} };
   for (const dim of dims) {
-    const keys = new Set([...fb[dim].keys(), ...sheet[dim].keys()]);
+    const keys = new Set([...fb[dim].keys(), ...sheet[dim].keys(), ...stageDay[dim].keys()]);
     for (const key of keys) {
       const fbDays = fb[dim].get(key);
       const shDays = sheet[dim].get(key);
-      const dates = new Set([...(fbDays?.keys() || []), ...(shDays?.keys() || [])]);
+      const stDays = stageDay[dim].get(key);
+      const dates = new Set([...(fbDays?.keys() || []), ...(shDays?.keys() || []), ...(stDays?.keys() || [])]);
       out[dim][key] = [...dates].sort().map((date) => {
         const f = fbDays?.get(date) || { spend: 0, impressions: 0, clicks: 0, uoc: 0, platforms: {} };
         const s = shDays?.get(date) || { leads: 0, tickets: 0, scoreSum: 0, scored: 0, qualified: 0 };
@@ -454,6 +475,7 @@ function buildDailyByEntity(dailyEntities, leads) {
           leads: s.leads,
           tickets: s.tickets,
           quality: s.scored ? Math.round(s.scoreSum / s.scored) : null,
+          stages: stDays?.get(date) || {},
         };
       });
     }
