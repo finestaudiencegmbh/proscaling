@@ -21,14 +21,15 @@ const fmtScore = (n) => (n == null ? '–' : String(Math.round(n)));
 /** Kennzahlen in drei Sektionen – ohne horizontales Scrollen, alles umbruchfähig. */
 function Metrics({ n, leadHidden, features, stages = [] }) {
   const lead = (v) => (leadHidden ? '–' : v);
-  // Pro Funnel-Stufe: Anzahl, Kosten/Stufe und CVR von der Vorstufe.
+  // Pro Funnel-Stufe: Anzahl, Kosten/Stufe und CVR von der Vorstufe – die
+  // Folge-CVR (z. B. EG→ZG) wird in der Kampagnenansicht NICHT angezeigt,
+  // nur die erste Stufe (Lead→EG).
   const stageItems = [];
   stages.forEach((s, i) => {
     const st = n.stages?.[s.key] || {};
-    const prev = i === 0 ? 'Lead' : (stages[i - 1].short || stages[i - 1].singular);
     stageItems.push([s.plural, lead(fmtInt(st.count))]);
     stageItems.push([`€/${s.short || s.singular}`, lead(fmtEur(st.cpa))]);
-    stageItems.push([`CVR ${prev}→${s.short || s.singular}`, lead(fmtPct(st.cvr))]);
+    if (i === 0) stageItems.push([`CVR Lead→${s.short || s.singular}`, lead(fmtPct(st.cvr))]);
   });
   const groups = [
     {
@@ -152,7 +153,7 @@ export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEnti
                           <div className="cc-sub-body">
                             <Metrics n={a} leadHidden={leadHidden} features={features} stages={stages} />
                             {ads.length > 0 && (() => {
-                              const dataCols = 3 + stages.length + (features.hasQuality ? 1 : 0) + 2;
+                              const dataCols = 3 + stages.length + (features.hasQuality ? 1 : 0) + 3;
                               const gridStyle = { gridTemplateColumns: `minmax(180px, 2.4fr) repeat(${dataCols}, minmax(64px, 1fr))` };
                               return (
                               <div className="cc-ads">
@@ -163,8 +164,9 @@ export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEnti
                                   <span>CPL</span>
                                   {stages.map((s) => <span key={s.key}>{s.short || s.singular}</span>)}
                                   {features.hasQuality && <span>Quali-Rate</span>}
+                                  <span>CPM</span>
+                                  <span>CPC ausg.</span>
                                   <span>CVR Start</span>
-                                  <span>CTR ausg.</span>
                                 </div>
                                 {ads.map((ad) => (
                                   <div key={ad.id} className={`cc-ad ${ad.active === false ? 'is-paused' : ''}`} style={gridStyle}>
@@ -179,8 +181,9 @@ export default function CampaignCards({ hierarchy, dailyByEntity, intradayByEnti
                                     <span>{leadHidden ? '–' : fmtEur(ad.cpl)}</span>
                                     {stages.map((s) => <span key={s.key}>{leadHidden ? '–' : fmtInt(ad.stages?.[s.key]?.count ?? 0)}</span>)}
                                     {features.hasQuality && <span>{leadHidden ? '–' : fmtPct(ad.qualifiedRate)}</span>}
+                                    <span>{fmtEur2(ad.cpm)}</span>
+                                    <span>{fmtEur2(ad.cpoc)}</span>
                                     <span>{leadHidden ? '–' : fmtPct(ad.cvrStart)}</span>
-                                    <span>{fmtPct(ad.outboundCtr)}</span>
                                   </div>
                                 ))}
                               </div>
