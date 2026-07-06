@@ -93,15 +93,19 @@ function isEmptyRow(row) {
 function parseDate(s) {
   const v = norm(s);
   if (!v) return null;
-  // Die Zeit im Sheet ist bereits deutsche Wanduhr-Zeit. Sie wird daher 1:1
-  // übernommen (KEINE Zeitzonen-Umrechnung): die Ziffern werden direkt als
-  // UTC-Wanduhr abgelegt. Ein evtl. Suffix wie " +0000" wird ignoriert. So
-  // bleibt sie konsistent zur Anzeige (fmtDate nutzt timeZone:'UTC') und zur
-  // Tages-/Minuten-Bucketisierung (String-Slicing). Verhindert auch, dass
-  // Zähl-/Summenzeilen wie "161" fälschlich als Datum interpretiert werden.
-  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
-  if (!m) return null;
-  const [, Y, Mo, D, H = '00', Mi = '00', S = '00'] = m;
+  // Die Zeit im Sheet ist bereits deutsche Wanduhr-Zeit und wird 1:1 übernommen
+  // (KEINE Zeitzonen-Umrechnung): die Ziffern werden direkt als UTC-Wanduhr
+  // abgelegt. Unterstützte Formate: "YYYY-MM-DD[ HH:MM[:SS]]" (Suffix wie
+  // " +0000" wird ignoriert) UND "DD.MM.YYYY[ HH:MM[:SS]]". Verhindert auch,
+  // dass Zähl-/Summenzeilen wie "161" als Datum interpretiert werden.
+  let Y, Mo, D, H = '00', Mi = '00', S = '00';
+  let m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) { [, Y, Mo, D, H = '00', Mi = '00', S = '00'] = m; }
+  else {
+    m = v.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!m) return null;
+    [, D, Mo, Y, H = '00', Mi = '00', S = '00'] = m;
+  }
   const d = new Date(Date.UTC(+Y, +Mo - 1, +D, +H, +Mi, +S));
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
