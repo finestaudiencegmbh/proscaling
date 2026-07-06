@@ -47,6 +47,7 @@
       "standalone": true,
       "sheet": {
         "tab": "zgs",
+        "classifyHas": ["closer"],
         "date": "datum",
         "name": "name",
         "emailColumns": ["e-mail"],
