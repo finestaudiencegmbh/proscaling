@@ -222,9 +222,23 @@ function parseLeadRow(o, project) {
   };
 }
 
+/** Spätestes gültiges Datum in einer Zeile (robust gegen Spalten-Versatz). Nur
+ *  echte Datumszellen zählen – parseDate verlangt ein Datum am Zeilenanfang,
+ *  UTM-/Namensfelder liefern daher null. */
+function latestDateInRow(o) {
+  let best = null;
+  for (const v of Object.values(o)) {
+    const iso = parseDate(v);
+    if (iso && (!best || iso > best)) best = iso;
+  }
+  return best;
+}
+
 function parseStageRow(o, stage) {
   const S = stage.sheet;
-  const at = parseDate(o[S.date]);
+  // dateMode:'latest' -> das späteste Datum der Zeile (z. B. ZG-Termin, der nach
+  // dem Lead-Datum liegt); sonst gezielt die konfigurierte Spalte.
+  const at = S.dateMode === 'latest' ? latestDateInRow(o) : parseDate(o[S.date]);
   const emailCols = S.emailColumns || [S.email].filter(Boolean);
   const email = normEmail(emailCols.map((c) => o[c]).find(Boolean));
   if (!at && !email) return null;

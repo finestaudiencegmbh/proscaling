@@ -49,6 +49,7 @@
         "tab": "zgs",
         "classifyHas": ["closer"],
         "date": "datum#2",
+        "dateMode": "latest",
         "name": "name",
         "emailColumns": ["e-mail"],
         "phone": "telefon",
