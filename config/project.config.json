@@ -17,7 +17,7 @@
     "hasQuality": false
   },
 
-  "_comment_stages": "Funnel-Stufen NACH dem Lead. standalone=true: die Stufe wird KOMPLETT eigenständig aus ihrem eigenen Tab gezählt – eigenes Datum, eigene UTM-Attribution, KEIN Abgleich mit der Leadliste. Die Tabs werden am Namen erkannt (sheet.tab: 'egs'/'zgs'); die 'Klient'-Spalte wird ignoriert. UTM-Spalten der ZG heißen im Sheet 'UTM Source 1' usw.",
+  "_comment_stages": "Funnel-Stufen NACH dem Lead. standalone=true: die Stufe wird KOMPLETT eigenständig aus ihrem eigenen Tab gezählt – eigenes Datum, eigene UTM-Attribution, KEIN Abgleich mit der Leadliste. Die Tabs werden am Namen erkannt (sheet.tab). Der ZG-Tab hat ZWEI 'Datum'-Spalten: die erste = Herkunfts-/Lead-Datum, die zweite (nach 'Closer') = der ZG-Termin – daher date='datum#2' (zweite gleichnamige Spalte).",
   "stages": [
     {
       "key": "eg",
@@ -48,7 +48,7 @@
       "sheet": {
         "tab": "zgs",
         "classifyHas": ["closer"],
-        "date": "datum",
+        "date": "datum#2",
         "name": "name",
         "emailColumns": ["e-mail"],
         "phone": "telefon",
