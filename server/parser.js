@@ -160,11 +160,17 @@ function* iterateTables(rows, project, forcedType = null) {
     }
     if (header) {
       if (isEmptyRow(row)) {
-        const prev = flush();
-        if (prev) yield prev;
-        header = null;
-        type = null;
-        body = [];
+        // Eine Leerzeile beendet die Tabelle nur, wenn sie bereits Daten hatte.
+        // Eine Leerzeile DIREKT unter der Kopfzeile (z. B. Zeile 2 im ZG-Tab)
+        // wird übersprungen – sonst würde der Header verworfen und alle
+        // Datenzeilen fielen weg.
+        if (body.length) {
+          const prev = flush();
+          if (prev) yield prev;
+          header = null;
+          type = null;
+          body = [];
+        }
       } else {
         body.push(row);
       }
