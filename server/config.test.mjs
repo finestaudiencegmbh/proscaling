@@ -135,5 +135,18 @@ assert.equal(tabParsed.leads.length, 2, 'Leadliste (trotz leerer Klient-Spalte) 
 assert.equal(tabParsed.stages.eg.length, 1, 'EGs_2026 am Tab-Namen als EG erkannt');
 assert.equal(tabParsed.stages.zg.length, 1, 'ZGs_2026 am Tab-Namen als ZG erkannt');
 
+// --- 5) ZG-Datum = zweite "Datum"-Spalte (Termin), nicht die erste (Herkunft) --
+const byTab2 = {
+  ...byTab,
+  stages: byTab.stages.map((s) => (s.key === 'zg' ? { ...s, sheet: { ...s.sheet, date: 'datum#2' } } : s)),
+};
+const zgTermin = { title: 'ZGs_2026', values: [
+  ['Datum', 'Name', 'E-Mail', 'UTM Source 1', 'UTM Medium 1', 'UTM Campaign 1', 'UTM Term 1', 'Closer', 'Datum'],
+  // erste Datum = alte Lead-Herkunft, zweite Datum = Termin (gestern)
+  ['2026-03-12 10:00:00', 'Nico', 'nico@gmx.de', 'AG1: SIT // DE AT // 25-55', 'C2', 'ABO', 'Instagram_Reels', 'Tom', '2026-07-05 09:00:00'],
+] };
+const zgParsed = parseSheets([leadTab, egTab, zgTermin], byTab2);
+assert.equal(zgParsed.stages.zg[0].at, '2026-07-05T09:00:00.000Z', 'ZG nutzt die zweite Datum-Spalte (Termin), nicht die erste (Herkunft)');
+
 console.log('✓ Alle Funnel-Stufen-Tests bestanden');
 console.log(`  Default: tickets=${def.counts.tickets} | keine Stufen: leads=${ns.counts.leads} | zwei Stufen: eg=${ts.counts.stages.eg} zg=${ts.counts.stages.zg}`);
