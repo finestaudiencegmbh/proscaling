@@ -15,7 +15,7 @@ import { DEFAULTS } from './config.js';
 
 const norm = (s) =>
   String(s ?? '')
-    .replace(/ /g, ' ')
+    .replace(/ /g, ' ')
     .trim();
 
 const key = (s) =>
@@ -43,11 +43,15 @@ function tabTypeFromTitle(title, project) {
 /** Schlüsselspalten, an denen die Kopfzeile eines (namensbasiert) erzwungenen
  *  Typs erkannt wird (zur Trennung Header vs. Datenzeile). */
 function headerKeysFor(type, project) {
-  if (type === 'overview') return [project.sheet.overview.dimension, project.sheet.overview.adspend].filter(Boolean);
-  if (type === 'leads') return [project.sheet.lead.wonAt, project.sheet.lead.email].filter(Boolean);
+  // Suffixe (#2) für die Header-Erkennung entfernen – die Kopfzeile enthält den
+  // Basisnamen (z. B. "datum"), das Suffix entsteht erst in rowToObj.
+  const strip = (c) => String(c).replace(/#\d+$/, '');
+  const ov = project.sheet.overview, ld = project.sheet.lead;
+  if (type === 'overview') return [ov.dimension, ov.adspend].filter(Boolean).map(strip);
+  if (type === 'leads') return [ld.wonAt, ld.email].filter(Boolean).map(strip);
   if (type && type.startsWith('stage:')) {
     const s = (project.stages || []).find((x) => `stage:${x.key}` === type);
-    return s ? [s.sheet.date, ...(s.sheet.emailColumns || [])].filter(Boolean) : [];
+    return s ? [s.sheet.date, ...(s.sheet.emailColumns || [])].filter(Boolean).map(strip) : [];
   }
   return [];
 }
@@ -78,10 +82,16 @@ function classifyHeader(cells, project, forcedType = null) {
 
 function rowToObj(headerCells, row) {
   const obj = {};
+  const seen = {};
   headerCells.forEach((h, i) => {
-    const k = key(h);
-    if (!k) return;
-    if (obj[k] === undefined) obj[k] = norm(row[i]); // erste gleichnamige Spalte gewinnt
+    const base = key(h);
+    if (!base) return;
+    seen[base] = (seen[base] || 0) + 1;
+    // Erste gleichnamige Spalte behält den Namen; weitere bekommen ein Suffix
+    // ("datum" -> "datum#2"), damit z. B. die zweite Datum-Spalte im ZG-Tab
+    // (= ZG-Termin) gezielt angesprochen werden kann.
+    const k = seen[base] === 1 ? base : `${base}#${seen[base]}`;
+    obj[k] = norm(row[i]);
   });
   return obj;
 }
