@@ -17,7 +17,7 @@
     "hasQuality": false
   },
 
-  "_comment_stages": "Funnel-Stufen NACH dem Lead. standalone=true: die Stufe wird KOMPLETT eigenständig aus ihrem eigenen Tab gezählt – eigenes Datum, eigene UTM-Attribution, KEIN Abgleich mit der Leadliste. Die Tabs werden am Namen erkannt (sheet.tab). Der ZG-Tab hat ZWEI 'Datum'-Spalten: die erste = Herkunfts-/Lead-Datum, die zweite (nach 'Closer') = der ZG-Termin – daher date='datum#2' (zweite gleichnamige Spalte).",
+  "_comment_stages": "Funnel-Stufen NACH dem Lead. standalone=true: die Stufe wird KOMPLETT eigenständig aus ihrem eigenen Tab gezählt – eigenes Datum, eigene UTM-Attribution, KEIN Abgleich mit der Leadliste. Die Tabs werden am Namen erkannt (sheet.tab). EG- und ZG-Tab haben ZWEI 'Datum'-Spalten (die erste = Lead-/Buchungsdatum, die zweite nach 'Closer' = der Termin) und die UTM-Spalten heißen 'UTM Source 1' usw. (Spalten E–G). dateMode='latest' nimmt das späteste Datum der Zeile (= Termin), robust gegen Spalten-Versatz.",
   "stages": [
     {
       "key": "eg",
@@ -28,14 +28,15 @@
       "standalone": true,
       "sheet": {
         "tab": "egs",
-        "date": "datum",
+        "date": "datum#2",
+        "dateMode": "latest",
         "name": "name",
         "emailColumns": ["e-mail"],
         "phone": "telefon",
-        "utmSource": "utm source",
-        "utmMedium": "utm medium",
-        "utmCampaign": "utm campaign",
-        "utmTerm": "utm term"
+        "utmSource": "utm source 1",
+        "utmMedium": "utm medium 1",
+        "utmCampaign": "utm campaign 1",
+        "utmTerm": "utm term 1"
       }
     },
     {
