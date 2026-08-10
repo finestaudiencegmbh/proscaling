@@ -17,7 +17,7 @@
     "hasQuality": false
   },
 
-  "_comment_stages": "Funnel-Stufen NACH dem Lead. standalone=true: die Stufe wird KOMPLETT eigenständig aus ihrem eigenen Tab gezählt – eigenes Datum, eigene UTM-Attribution, KEIN Abgleich mit der Leadliste. Die Tabs werden am Namen erkannt (sheet.tab). EG- und ZG-Tab haben ZWEI 'Datum'-Spalten (die erste = Lead-/Buchungsdatum, die zweite nach 'Closer' = der Termin) und die UTM-Spalten heißen 'UTM Source 1' usw. (Spalten E–G). dateMode='latest' nimmt das späteste Datum der Zeile (= Termin), robust gegen Spalten-Versatz.",
+  "_comment_stages": "Funnel-Stufen NACH dem Lead. standalone=true: die Stufe wird KOMPLETT eigenständig aus ihrem eigenen Tab gezählt – eigenes Datum, eigene UTM-Attribution, KEIN Abgleich mit der Leadliste. Die Tabs werden am Namen erkannt (sheet.tab). EG-/ZG-Tab: gezählt wird nach dem EINGANGS-Datum (Spalte A, 'datum' – wann das Gespräch reinkam), NICHT nach dem Termin (zweite Datum-Spalte). UTM-Attribution aus Spalte E–G ('UTM Source 1' usw.).",
   "stages": [
     {
       "key": "eg",
@@ -28,8 +28,7 @@
       "standalone": true,
       "sheet": {
         "tab": "egs",
-        "date": "datum#2",
-        "dateMode": "latest",
+        "date": "datum",
         "name": "name",
         "emailColumns": ["e-mail"],
         "phone": "telefon",
@@ -49,8 +48,7 @@
       "sheet": {
         "tab": "zgs",
         "classifyHas": ["closer"],
-        "date": "datum#2",
-        "dateMode": "latest",
+        "date": "datum",
         "name": "name",
         "emailColumns": ["e-mail"],
         "phone": "telefon",
